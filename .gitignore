@@ -1,2 +1,17 @@
 target/
 Cargo.lock
+
+# Test logs and reports
+test-logs/
+security-audits/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
