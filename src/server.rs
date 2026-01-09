@@ -10,8 +10,8 @@ use embeddenator_webpuppet::PermissionGuard;
 use crate::error::{codes, Result};
 use crate::protocol::{
     ClientCapabilities, InitializeParams, InitializeResult, JsonRpcId, JsonRpcRequest,
-    JsonRpcResponse, ListToolsResult, McpMessage, ServerCapabilities, ServerInfo,
-    ToolCallParams, ToolsCapability,
+    JsonRpcResponse, ListToolsResult, McpMessage, ServerCapabilities, ServerInfo, ToolCallParams,
+    ToolsCapability,
 };
 use crate::tools::ToolRegistry;
 
@@ -196,7 +196,9 @@ impl McpServer {
         let result = InitializeResult {
             protocol_version: PROTOCOL_VERSION.into(),
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability { list_changed: false }),
+                tools: Some(ToolsCapability {
+                    list_changed: false,
+                }),
                 resources: None,
                 prompts: None,
                 logging: None,

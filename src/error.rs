@@ -53,7 +53,7 @@ impl Error {
     pub fn code(&self) -> i32 {
         match self {
             Error::JsonRpc { code, .. } => *code,
-            Error::ToolNotFound(_) => -32601, // Method not found
+            Error::ToolNotFound(_) => -32601,  // Method not found
             Error::InvalidParams(_) => -32602, // Invalid params
             Error::PermissionDenied(_) => -32000, // Server error
             Error::Webpuppet(_) => -32001,

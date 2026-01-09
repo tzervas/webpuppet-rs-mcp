@@ -8,8 +8,8 @@ use serde_json::json;
 use tokio::sync::RwLock;
 
 use embeddenator_webpuppet::{
-    BrowserDetector, InterventionHandler, InterventionState,
-    Operation, PermissionGuard, Provider, PromptRequest, ScreeningConfig, WebPuppet,
+    BrowserDetector, InterventionHandler, InterventionState, Operation, PermissionGuard,
+    PromptRequest, Provider, ScreeningConfig, WebPuppet,
 };
 
 use crate::error::{Error, Result};
@@ -171,7 +171,10 @@ impl ToolRegistry {
         tools.insert(navigate_tool.definition().name.clone(), navigate_tool);
 
         let browser_status_tool = Arc::new(BrowserStatusTool);
-        tools.insert(browser_status_tool.definition().name.clone(), browser_status_tool);
+        tools.insert(
+            browser_status_tool.definition().name.clone(),
+            browser_status_tool,
+        );
 
         Self { tools, context }
     }
@@ -182,7 +185,11 @@ impl ToolRegistry {
     }
 
     /// Execute a tool by name.
-    pub async fn execute(&self, name: &str, arguments: serde_json::Value) -> Result<ToolCallResult> {
+    pub async fn execute(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<ToolCallResult> {
         let tool = self
             .tools
             .get(name)
@@ -267,7 +274,12 @@ impl Tool for PromptTool {
             "perplexity" => Provider::Perplexity,
             "notebooklm" | "notebook" => Provider::NotebookLm,
             "kaggle" => Provider::Kaggle,
-            _ => return Err(Error::InvalidParams(format!("unknown provider: {}", args.provider))),
+            _ => {
+                return Err(Error::InvalidParams(format!(
+                    "unknown provider: {}",
+                    args.provider
+                )))
+            }
         };
 
         // Build request
@@ -327,19 +339,59 @@ impl Tool for ListProvidersTool {
         _arguments: serde_json::Value,
         _context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let providers = vec![
-            ("claude", "Claude (Anthropic)", "https://claude.ai", "Large context, artifacts, code"),
-            ("grok", "Grok (X/xAI)", "https://x.com/i/grok", "Real-time info, integrated with X"),
-            ("gemini", "Gemini (Google)", "https://gemini.google.com", "Google integration, large context"),
-            ("chatgpt", "ChatGPT (OpenAI)", "https://chat.openai.com", "GPT-4o, vision, code, web search"),
-            ("perplexity", "Perplexity AI", "https://www.perplexity.ai", "Search-focused, sources cited"),
-            ("notebooklm", "NotebookLM (Google)", "https://notebooklm.google.com", "Research assistant, 500k context"),
-            ("kaggle", "Kaggle (Datasets)", "https://www.kaggle.com/datasets", "Dataset search/catalog; returns dataset page links"),
+        let providers = [
+            (
+                "claude",
+                "Claude (Anthropic)",
+                "https://claude.ai",
+                "Large context, artifacts, code",
+            ),
+            (
+                "grok",
+                "Grok (X/xAI)",
+                "https://x.com/i/grok",
+                "Real-time info, integrated with X",
+            ),
+            (
+                "gemini",
+                "Gemini (Google)",
+                "https://gemini.google.com",
+                "Google integration, large context",
+            ),
+            (
+                "chatgpt",
+                "ChatGPT (OpenAI)",
+                "https://chat.openai.com",
+                "GPT-4o, vision, code, web search",
+            ),
+            (
+                "perplexity",
+                "Perplexity AI",
+                "https://www.perplexity.ai",
+                "Search-focused, sources cited",
+            ),
+            (
+                "notebooklm",
+                "NotebookLM (Google)",
+                "https://notebooklm.google.com",
+                "Research assistant, 500k context",
+            ),
+            (
+                "kaggle",
+                "Kaggle (Datasets)",
+                "https://www.kaggle.com/datasets",
+                "Dataset search/catalog; returns dataset page links",
+            ),
         ];
 
         let text = providers
             .iter()
-            .map(|(id, name, url, features)| format!("- **{}** (`{}`): [{}]({})\n  _{}_", name, id, url, url, features))
+            .map(|(id, name, url, features)| {
+                format!(
+                    "- **{}** (`{}`): [{}]({})\n  _{}_",
+                    name, id, url, url, features
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -403,7 +455,12 @@ impl Tool for ProviderCapabilitiesTool {
             "perplexity" => Provider::Perplexity,
             "notebooklm" | "notebook" => Provider::NotebookLm,
             "kaggle" => Provider::Kaggle,
-            _ => return Err(Error::InvalidParams(format!("unknown provider: {}", args.provider))),
+            _ => {
+                return Err(Error::InvalidParams(format!(
+                    "unknown provider: {}",
+                    args.provider
+                )))
+            }
         };
 
         // Build a puppet (no auth needed just to query static capabilities).
@@ -515,7 +572,8 @@ impl Tool for ScreenshotTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "webpuppet_screenshot".into(),
-            description: "Take a screenshot of a web page. Only allowed domains can be accessed.".into(),
+            description: "Take a screenshot of a web page. Only allowed domains can be accessed."
+                .into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -628,7 +686,11 @@ impl Tool for CheckPermissionTool {
             context.permissions.check(operation)
         };
 
-        let status = if decision.allowed { "✅ ALLOWED" } else { "❌ DENIED" };
+        let status = if decision.allowed {
+            "✅ ALLOWED"
+        } else {
+            "❌ DENIED"
+        };
         let text = format!(
             "# Permission Check\n\n**Operation**: `{}`\n**Status**: {}\n**Reason**: {}\n**Risk Level**: {}/10",
             operation, status, decision.reason, decision.risk_level
@@ -743,7 +805,11 @@ impl Tool for InterventionCompleteTool {
         let handler = context.intervention_handler.read().await;
         handler.complete(args.success, args.message.clone());
 
-        let status = if args.success { "✅ SUCCESS" } else { "❌ FAILED" };
+        let status = if args.success {
+            "✅ SUCCESS"
+        } else {
+            "❌ FAILED"
+        };
         let text = format!(
             "# Intervention Complete\n\n**Status**: {}\n**Message**: {}\n\nAutomation will now resume.",
             status,
@@ -839,7 +905,8 @@ impl Tool for NavigateTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "webpuppet_navigate".into(),
-            description: "Navigate browser to a URL. Opens a browser window if not already open.".into(),
+            description: "Navigate browser to a URL. Opens a browser window if not already open."
+                .into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -870,16 +937,22 @@ impl Tool for NavigateTool {
 
         // Get puppet and navigate
         let puppet = context.get_puppet().await?;
-        
+
         // Get session (using Grok as default provider for navigation)
         let session = puppet.get_session(Provider::Grok).await?;
-        
+
         // Navigate
         session.navigate(&args.url).await?;
-        
+
         // Get current URL and title
-        let current_url = session.current_url().await.unwrap_or_else(|_| args.url.clone());
-        let title = session.get_title().await.unwrap_or_else(|_| "Unknown".into());
+        let current_url = session
+            .current_url()
+            .await
+            .unwrap_or_else(|_| args.url.clone());
+        let title = session
+            .get_title()
+            .await
+            .unwrap_or_else(|_| "Unknown".into());
 
         Ok(ToolCallResult {
             content: vec![ContentItem::text(format!(
@@ -914,7 +987,7 @@ impl Tool for BrowserStatusTool {
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
         let guard = context.puppet.read().await;
-        
+
         if guard.is_none() {
             return Ok(ToolCallResult {
                 content: vec![ContentItem::text(
@@ -925,8 +998,12 @@ impl Tool for BrowserStatusTool {
         }
 
         // Return basic status
-        let visibility = if context.headless { "Headless" } else { "Visible" };
-        
+        let visibility = if context.headless {
+            "Headless"
+        } else {
+            "Visible"
+        };
+
         Ok(ToolCallResult {
             content: vec![ContentItem::text(format!(
                 "# Browser Status\n\n🟢 Browser session is active.\n\n- **Mode**: {}\n- **Providers**: Grok, Claude, Gemini",
