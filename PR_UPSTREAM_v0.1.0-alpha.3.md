@@ -65,7 +65,7 @@ All dependencies updated to exact versions for reproducible builds:
 #### Dev Dependencies
 - **tokio-test**: `0.4` → `=0.4.4`
 
-### 2. Testing Infrastructure
+### 3. Testing Infrastructure
 
 #### New Test Scripts
 - **`scripts/test_mcp_server.sh`** - Comprehensive automated testing (287 lines)
@@ -87,6 +87,14 @@ All dependencies updated to exact versions for reproducible builds:
   - Unsafe code detection
   - Secret scanning (gitleaks integration)
   - SBOM (Software Bill of Materials) generation
+
+- **`scripts/build_release.sh`** - Local multi-architecture build (150+ lines)
+  - Parallel ARM64 and AMD64 builds using Docker
+  - 4 CPU cores and 8GB RAM allocated per architecture
+  - Static linking with musl for portable binaries
+  - Automatic tarball creation and checksums
+  - Optional GitHub release upload integration
+  - See [docs/LOCAL_BUILDS.md](docs/LOCAL_BUILDS.md) for details
 
 #### Test Documentation
 - **`TESTING.md`** - Comprehensive testing guide (380+ lines)

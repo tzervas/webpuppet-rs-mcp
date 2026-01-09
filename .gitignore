@@ -5,6 +5,9 @@ Cargo.lock
 test-logs/
 security-audits/
 
+# Release artifacts
+release-artifacts/
+
 # IDE
 .vscode/
 .idea/
