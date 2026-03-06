@@ -54,7 +54,7 @@ docker run --rm \
     --memory="8g" \
     -v "${PROJECT_ROOT}:/workspace" \
     -w /workspace \
-    rust:1.75-bookworm \
+    rust:latest \
     bash -c "
         apt-get update -qq && apt-get install -y -qq musl-tools > /dev/null 2>&1
         rustup target add x86_64-unknown-linux-musl
@@ -72,7 +72,7 @@ docker run --rm \
     --memory="8g" \
     -v "${PROJECT_ROOT}:/workspace" \
     -w /workspace \
-    rust:1.75-bookworm \
+    rust:latest \
     bash -c "
         apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu musl-tools > /dev/null 2>&1
         rustup target add aarch64-unknown-linux-musl
