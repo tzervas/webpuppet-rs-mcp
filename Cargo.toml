@@ -16,7 +16,7 @@ http = ["dep:axum", "dep:tower", "dep:tower-http"]
 
 [dependencies]
 # Webpuppet core - enable all providers for full support
-embeddenator-webpuppet = { git = "https://github.com/tzervas/webpuppet-rs", tag = "v0.1.0-alpha.3", features = ["all-providers"] }
+webpuppet = { path = "../webpuppet-rs", features = ["all-providers"] }
 
 # Async runtime
 tokio = { version = "=1.49.0", features = ["full", "sync"] }
@@ -46,6 +46,11 @@ tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
 # Utilities
 uuid = { version = "=1.19.0", features = ["v4"] }
 chrono = { version = "=0.4.42", features = ["serde"] }
+
+
+[lib]
+name = "webpuppet_mcp"
+path = "src/lib.rs"
 
 [[bin]]
 name = "webpuppet-mcp"
