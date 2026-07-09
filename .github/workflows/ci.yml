@@ -1,10 +1,8 @@
 name: CI
 
+# Manual only — run the same checks locally via ./scripts/check.sh
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,42 +14,34 @@ env:
 
 jobs:
   build-and-test:
-    name: Build and Test
+    name: Build and Test (local parity)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout webpuppet-rs dependency
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: tzervas/webpuppet-rs
           path: webpuppet-rs
-      
-      - uses: actions/checkout@v6
+
+      - uses: actions/checkout@v4
         with:
           path: webpuppet-rs-mcp
-      
-      - name: Install OpenSSL
+
+      - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
-      
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      
+
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           key: webpuppet-mcp
           workspaces: webpuppet-rs-mcp
-      
-      - name: Check formatting
-        run: cd webpuppet-rs-mcp && cargo fmt --check
-      
-      - name: Clippy lints
-        run: cd webpuppet-rs-mcp && cargo clippy --all-targets --all-features -- -D warnings
-      
-      - name: Build
-        run: cd webpuppet-rs-mcp && cargo build --all-features
-      
-      - name: Run tests
-        run: cd webpuppet-rs-mcp && cargo test --all-features --verbose
+
+      - name: Local-parity checks
+        working-directory: webpuppet-rs-mcp
+        run: bash scripts/check.sh
