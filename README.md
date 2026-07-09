@@ -241,3 +241,8 @@ Response:
 ## License
 
 MIT
+
+## Status & roadmap
+
+- [Assessment & gaps](docs/ASSESSMENT.md)
+- [Product roadmap & API plans](docs/ROADMAP.md)
