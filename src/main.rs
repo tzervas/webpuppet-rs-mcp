@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use clap::Parser;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use embeddenator_webpuppet::{PermissionGuard, PermissionPolicy};
-use embeddenator_webpuppet_mcp::McpServer;
+use webpuppet::{PermissionGuard, PermissionPolicy};
+use webpuppet_mcp::McpServer;
 
 /// MCP server for webpuppet browser automation.
 #[derive(Parser, Debug)]
@@ -57,8 +57,8 @@ async fn main() -> ExitCode {
 
     tracing::info!(
         "Starting {} v{}",
-        embeddenator_webpuppet_mcp::server::SERVER_NAME,
-        embeddenator_webpuppet_mcp::server::SERVER_VERSION
+        webpuppet_mcp::server::SERVER_NAME,
+        webpuppet_mcp::server::SERVER_VERSION
     );
 
     // Set up permissions

@@ -33,9 +33,12 @@ struct JsonRpcResponse {
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcError {
+    #[allow(dead_code)]
     code: i32,
+    #[allow(dead_code)]
     message: String,
     #[serde(default)]
+    #[allow(dead_code)]
     data: Option<Value>,
 }
 
@@ -48,7 +51,7 @@ impl McpTestClient {
     async fn spawn() -> Result<Self, Box<dyn std::error::Error>> {
         // Build the MCP server first
         let build_status = std::process::Command::new("cargo")
-            .args(["build", "-p", "embeddenator-webpuppet-mcp", "--release"])
+            .args(["build", "-p", "webpuppet-mcp", "--release"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .status()?;
 
@@ -72,7 +75,10 @@ impl McpTestClient {
         Ok(Self { child })
     }
 
-    async fn send_request(&mut self, request: JsonRpcRequest) -> Result<JsonRpcResponse, Box<dyn std::error::Error>> {
+    async fn send_request(
+        &mut self,
+        request: JsonRpcRequest,
+    ) -> Result<JsonRpcResponse, Box<dyn std::error::Error>> {
         let stdin = self.child.stdin.as_mut().ok_or("No stdin")?;
         let stdout = self.child.stdout.as_mut().ok_or("No stdout")?;
 
@@ -139,7 +145,10 @@ async fn test_initialize_handshake() {
             assert!(response.error.is_none(), "Should not have error");
 
             if let Some(result) = response.result {
-                println!("Initialize result: {}", serde_json::to_string_pretty(&result).unwrap());
+                println!(
+                    "Initialize result: {}",
+                    serde_json::to_string_pretty(&result).unwrap()
+                );
                 // Check for expected fields
                 assert!(result.get("protocolVersion").is_some());
                 assert!(result.get("serverInfo").is_some());
@@ -255,17 +264,27 @@ async fn test_tool_call_detect_browsers() {
             assert!(response.error.is_none(), "Should not have error");
 
             if let Some(result) = response.result {
-                println!("Detect browsers result: {}", serde_json::to_string_pretty(&result).unwrap());
+                println!(
+                    "Detect browsers result: {}",
+                    serde_json::to_string_pretty(&result).unwrap()
+                );
 
                 // Should have content
                 if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
                     assert!(!content.is_empty(), "Should have content");
 
                     // First item should be text
-                    if let Some(text) = content.first().and_then(|c| c.get("text")).and_then(|t| t.as_str()) {
+                    if let Some(text) = content
+                        .first()
+                        .and_then(|c| c.get("text"))
+                        .and_then(|t| t.as_str())
+                    {
                         println!("Browser detection output:\n{}", text);
                         // Should mention Brave since it's installed
-                        assert!(text.contains("Brave") || text.contains("browser"), "Should detect browsers");
+                        assert!(
+                            text.contains("Brave") || text.contains("browser"),
+                            "Should detect browsers"
+                        );
                     }
                 }
             }
@@ -318,13 +337,14 @@ async fn test_tool_call_check_permission() {
         Ok(response) => {
             assert!(response.error.is_none());
             if let Some(result) = response.result {
-                let text = result.get("content")
+                let text = result
+                    .get("content")
                     .and_then(|c| c.as_array())
                     .and_then(|a| a.first())
                     .and_then(|c| c.get("text"))
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
-                
+
                 println!("Permission check (Navigate): {}", text);
                 assert!(text.contains("ALLOWED"), "Navigate should be allowed");
             }
@@ -349,13 +369,14 @@ async fn test_tool_call_check_permission() {
         Ok(response) => {
             assert!(response.error.is_none());
             if let Some(result) = response.result {
-                let text = result.get("content")
+                let text = result
+                    .get("content")
                     .and_then(|c| c.as_array())
                     .and_then(|a| a.first())
                     .and_then(|c| c.get("text"))
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
-                
+
                 println!("Permission check (DeleteAccount): {}", text);
                 assert!(text.contains("DENIED"), "DeleteAccount should be denied");
             }
@@ -404,16 +425,20 @@ async fn test_intervention_status() {
         Ok(response) => {
             assert!(response.error.is_none());
             if let Some(result) = response.result {
-                let text = result.get("content")
+                let text = result
+                    .get("content")
                     .and_then(|c| c.as_array())
                     .and_then(|a| a.first())
                     .and_then(|c| c.get("text"))
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
-                
+
                 println!("Intervention status: {}", text);
                 // Should show running state initially
-                assert!(text.contains("Running") || text.contains("Status"), "Should show status");
+                assert!(
+                    text.contains("Running") || text.contains("Status"),
+                    "Should show status"
+                );
             }
         }
         Err(e) => eprintln!("Intervention status failed: {}", e),
@@ -449,7 +474,12 @@ async fn test_unknown_method_error() {
             if let Some(error) = response.error {
                 println!("Error (expected): {} (code: {})", error.message, error.code);
                 // Method not found is -32601
-                assert!(error.code == -32601 || error.code == -32600 || error.message.contains("not") || error.message.contains("unknown"));
+                assert!(
+                    error.code == -32601
+                        || error.code == -32600
+                        || error.message.contains("not")
+                        || error.message.contains("unknown")
+                );
             }
         }
         Err(e) => eprintln!("Request failed: {}", e),
@@ -551,13 +581,14 @@ async fn test_pause_resume_workflow() {
 
     if let Ok(response) = client.send_request(pause_request).await {
         if let Some(result) = response.result {
-            let text = result.get("content")
+            let text = result
+                .get("content")
                 .and_then(|c| c.as_array())
                 .and_then(|a| a.first())
                 .and_then(|c| c.get("text"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("");
-            
+
             println!("Pause result: {}", text);
             assert!(text.contains("Paused") || text.contains("paused"));
         }
@@ -576,13 +607,14 @@ async fn test_pause_resume_workflow() {
 
     if let Ok(response) = client.send_request(resume_request).await {
         if let Some(result) = response.result {
-            let text = result.get("content")
+            let text = result
+                .get("content")
                 .and_then(|c| c.as_array())
                 .and_then(|a| a.first())
                 .and_then(|c| c.get("text"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("");
-            
+
             println!("Resume result: {}", text);
             assert!(text.contains("Resumed") || text.contains("resumed"));
         }

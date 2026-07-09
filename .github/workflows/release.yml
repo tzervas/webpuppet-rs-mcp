@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag name"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -13,21 +16,30 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout webpuppet-rs dependency
+        uses: actions/checkout@v4
+        with:
+          repository: tzervas/webpuppet-rs
+          path: webpuppet-rs
       - uses: actions/checkout@v4
-      
+        with:
+          path: webpuppet-rs-mcp
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
-      
-      - name: Build release
-        run: cargo build --release --all-features
-      
-      - name: Run tests
-        run: cargo test --all-features
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
         with:
+          components: clippy, rustfmt
+      - name: Pre-release checks
+        working-directory: webpuppet-rs-mcp
+        run: bash scripts/check.sh
+      - name: Build release
+        working-directory: webpuppet-rs-mcp
+        run: cargo build --release --all-features
+      - name: Create GitHub Release
+        if: ${{ inputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
           generate_release_notes: true
-          draft: false
+          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
