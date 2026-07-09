@@ -350,6 +350,76 @@
       "summary": "MCP only, never default-on in cabal. Chain: security screen → webpuppet tool → screen. Prefer ephemeral profiles from library Wave A."
     },
     {
+      "anchor": "assessment--tero-index",
+      "family": "doc",
+      "kind": "section",
+      "title": "Tero index",
+      "file": "docs/ASSESSMENT.md",
+      "line": 49,
+      "tag": "Empirical/Declared",
+      "summary": "Layer-1 citation index: [docs/tero-index/](tero-index/) (index.json, INDEX.md, MANIFEST.toml)."
+    },
+    {
+      "anchor": "localchecks",
+      "family": "doc",
+      "kind": "section",
+      "title": "Local checks (CI parity)",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "GitHub Actions workflows in this repo are manual only (workflowdispatch)."
+    },
+    {
+      "anchor": "localchecks--run-everything-the-remote-job-would-run",
+      "family": "doc",
+      "kind": "section",
+      "title": "Run everything the remote job would run",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 6,
+      "tag": "Empirical/Declared",
+      "summary": "./scripts/check.sh"
+    },
+    {
+      "anchor": "localchecks--tero-index",
+      "family": "doc",
+      "kind": "section",
+      "title": "Tero index",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 19,
+      "tag": "Empirical/Declared",
+      "summary": "python3 ../tero-mcp/scripts/generateliteindex.py --root \"$(pwd)\""
+    },
+    {
+      "anchor": "localchecks--from-a-checkout-that-can-see-the-generator-sibling-tero-mcp-recommended",
+      "family": "doc",
+      "kind": "other",
+      "title": "from a checkout that can see the generator (sibling tero-mcp recommended):",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 22,
+      "tag": "Empirical/Declared",
+      "summary": "python3 ../tero-mcp/scripts/generateliteindex.py --root \"$(pwd)\""
+    },
+    {
+      "anchor": "localchecks--or",
+      "family": "doc",
+      "kind": "other",
+      "title": "or:",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 24,
+      "tag": "Empirical/Declared",
+      "summary": "python3 scripts/generateteroindex.sh   # if present as a thin wrapper"
+    },
+    {
+      "anchor": "localchecks--remote-optional",
+      "family": "doc",
+      "kind": "section",
+      "title": "Remote (optional)",
+      "file": "docs/LOCAL_CHECKS.md",
+      "line": 30,
+      "tag": "Empirical/Declared",
+      "summary": "In GitHub: Actions → CI → Run workflow."
+    },
+    {
       "anchor": "roadmap",
       "family": "doc",
       "kind": "note",
@@ -445,6 +515,46 @@
       "summary": "- Default enable in cabal"
     },
     {
+      "anchor": "readme-2",
+      "family": "doc",
+      "kind": "other",
+      "title": "Tero index (Layer 1)",
+      "file": "docs/tero-index/README.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "Machine + human citation index for this repository."
+    },
+    {
+      "anchor": "readme--regenerate",
+      "family": "doc",
+      "kind": "section",
+      "title": "Regenerate",
+      "file": "docs/tero-index/README.md",
+      "line": 13,
+      "tag": "Empirical/Declared",
+      "summary": "python3 /path/to/tero-mcp/scripts/generateliteindex.py --root $(pwd)"
+    },
+    {
+      "anchor": "readme--or-if-tero-mcp-is-a-sibling",
+      "family": "doc",
+      "kind": "other",
+      "title": "or if tero-mcp is a sibling:",
+      "file": "docs/tero-index/README.md",
+      "line": 17,
+      "tag": "Empirical/Declared",
+      "summary": "python3 ../tero-mcp/scripts/generateliteindex.py --root $(pwd)"
+    },
+    {
+      "anchor": "readme--serve-locally",
+      "family": "doc",
+      "kind": "section",
+      "title": "Serve locally",
+      "file": "docs/tero-index/README.md",
+      "line": 21,
+      "tag": "Empirical/Declared",
+      "summary": "export TEROTOKENS=local-dev:refresh"
+    },
+    {
       "anchor": "changelog",
       "family": "changelog",
       "kind": "entry",
@@ -452,7 +562,7 @@
       "file": "CHANGELOG.md",
       "line": 1,
       "tag": "Empirical/Declared",
-      "summary": "All notable changes to webpuppet-mcp will be documented in this file."
+      "summary": "All notable changes to this project will be documented in this file."
     },
     {
       "anchor": "changelog--unreleased",
@@ -462,17 +572,17 @@
       "file": "CHANGELOG.md",
       "line": 8,
       "tag": "Empirical/Declared",
-      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+      "summary": "- Updated all dependencies to match webpuppet v0.1.0-alpha.3"
     },
     {
-      "anchor": "changelog--0.1.0-alpha.4-2025-01-22",
+      "anchor": "changelog--0.1.0-alpha.3-2026-01-09",
       "family": "changelog",
       "kind": "section",
-      "title": "[0.1.0-alpha.4] - 2025-01-22",
+      "title": "[0.1.0-alpha.3] - 2026-01-09",
       "file": "CHANGELOG.md",
       "line": 10,
       "tag": "Empirical/Declared",
-      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+      "summary": "- Updated all dependencies to match webpuppet v0.1.0-alpha.3"
     },
     {
       "anchor": "changelog--changed",
@@ -482,15 +592,25 @@
       "file": "CHANGELOG.md",
       "line": 12,
       "tag": "Empirical/Declared",
-      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+      "summary": "- Updated all dependencies to match webpuppet v0.1.0-alpha.3"
     },
     {
-      "anchor": "changelog--0.1.0-alpha.3-2025-01-19",
+      "anchor": "changelog--infrastructure",
       "family": "changelog",
       "kind": "section",
-      "title": "[0.1.0-alpha.3] - 2025-01-19",
+      "title": "Infrastructure",
       "file": "CHANGELOG.md",
-      "line": 17,
+      "line": 19,
+      "tag": "Empirical/Declared",
+      "summary": "- Aligned with upstream webpuppet-rs v0.1.0-alpha.3 release"
+    },
+    {
+      "anchor": "changelog--0.1.0-alpha.2-2024-12-20",
+      "family": "changelog",
+      "kind": "section",
+      "title": "[0.1.0-alpha.2] - 2024-12-20",
+      "file": "CHANGELOG.md",
+      "line": 22,
       "tag": "Empirical/Declared",
       "summary": "- Initial MCP server implementation"
     },
@@ -500,7 +620,7 @@
       "kind": "section",
       "title": "Added",
       "file": "CHANGELOG.md",
-      "line": 19,
+      "line": 24,
       "tag": "Empirical/Declared",
       "summary": "- Initial MCP server implementation"
     }

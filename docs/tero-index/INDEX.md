@@ -3,13 +3,13 @@
 > **Honesty:** Empirical/Declared — lite heading/line heuristic over markdown in webpuppet-rs-mcp via tero-mcp/scripts/generate_lite_index.py; source files are ground truth. Generated 2026-07-09.
 > Use this index to find where to Read, not as authoritative ground truth.
 
-- **Items:** 51
+- **Items:** 63
 - **Flagged:** 0
 - **item_tag:** `Empirical/Declared`
 - **Machine index:** [`index.json`](./index.json)
 - **Manifest:** [`MANIFEST.toml`](./MANIFEST.toml)
 
-## doc (45 entries)
+## doc (56 entries)
 
 | Anchor | Kind | Id | Title | File:Line | Status | Summary |
 |---|---|---|---|---|---|---|
@@ -48,6 +48,13 @@
 | `assessment--2.-branches` | section | — | 2. Branches | `docs/ASSESSMENT.md:21` | — | — |
 | `assessment--3.-gaps` | section | — | 3. Gaps | `docs/ASSESSMENT.md:31` | — | — |
 | `assessment--4.-integration` | section | — | 4. Integration | `docs/ASSESSMENT.md:43` | — | MCP only, never default-on in cabal. Chain: security screen → webpuppet tool → screen. Prefer ephemeral profiles from library Wave A. |
+| `assessment--tero-index` | section | — | Tero index | `docs/ASSESSMENT.md:49` | — | Layer-1 citation index: [docs/tero-index/](tero-index/) (index.json, INDEX.md, MANIFEST.toml). |
+| `localchecks` | section | — | Local checks (CI parity) | `docs/LOCAL_CHECKS.md:1` | — | GitHub Actions workflows in this repo are manual only (workflowdispatch). |
+| `localchecks--run-everything-the-remote-job-would-run` | section | — | Run everything the remote job would run | `docs/LOCAL_CHECKS.md:6` | — | ./scripts/check.sh |
+| `localchecks--tero-index` | section | — | Tero index | `docs/LOCAL_CHECKS.md:19` | — | python3 ../tero-mcp/scripts/generateliteindex.py --root "$(pwd)" |
+| `localchecks--from-a-checkout-that-can-see-the-generator-sibling-tero-mcp-recommended` | other | — | from a checkout that can see the generator (sibling tero-mcp recommended): | `docs/LOCAL_CHECKS.md:22` | — | python3 ../tero-mcp/scripts/generateliteindex.py --root "$(pwd)" |
+| `localchecks--or` | other | — | or: | `docs/LOCAL_CHECKS.md:24` | — | python3 scripts/generateteroindex.sh   # if present as a thin wrapper |
+| `localchecks--remote-optional` | section | — | Remote (optional) | `docs/LOCAL_CHECKS.md:30` | — | In GitHub: Actions → CI → Run workflow. |
 | `roadmap` | note | — | webpuppet-rs-mcp — Product Roadmap | `docs/ROADMAP.md:1` | Living (2026-07-08) | Status: Living (2026-07-08) |
 | `roadmap--waves` | section | — | Waves | `docs/ROADMAP.md:10` | — | — |
 | `roadmap--wave-a-tool-honesty` | section | — | Wave A — Tool honesty | `docs/ROADMAP.md:12` | — | — |
@@ -58,15 +65,20 @@
 | `roadmap--config` | section | — | Config | `docs/ROADMAP.md:60` | — | [security] |
 | `roadmap--pr-plan` | section | — | PR plan | `docs/ROADMAP.md:74` | — | 1. Docs assessment + roadmap |
 | `roadmap--non-goals` | section | — | Non-goals | `docs/ROADMAP.md:84` | — | - Default enable in cabal |
+| `readme-2` | other | — | Tero index (Layer 1) | `docs/tero-index/README.md:1` | — | Machine + human citation index for this repository. |
+| `readme--regenerate` | section | — | Regenerate | `docs/tero-index/README.md:13` | — | python3 /path/to/tero-mcp/scripts/generateliteindex.py --root $(pwd) |
+| `readme--or-if-tero-mcp-is-a-sibling` | other | — | or if tero-mcp is a sibling: | `docs/tero-index/README.md:17` | — | python3 ../tero-mcp/scripts/generateliteindex.py --root $(pwd) |
+| `readme--serve-locally` | section | — | Serve locally | `docs/tero-index/README.md:21` | — | export TEROTOKENS=local-dev:refresh |
 
-## changelog (6 entries)
+## changelog (7 entries)
 
 | Anchor | Kind | Id | Title | File:Line | Status | Summary |
 |---|---|---|---|---|---|---|
-| `changelog` | entry | — | Changelog | `CHANGELOG.md:1` | — | All notable changes to webpuppet-mcp will be documented in this file. |
-| `changelog--unreleased` | section | — | [Unreleased] | `CHANGELOG.md:8` | — | - BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp |
-| `changelog--0.1.0-alpha.4-2025-01-22` | section | — | [0.1.0-alpha.4] - 2025-01-22 | `CHANGELOG.md:10` | — | - BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp |
-| `changelog--changed` | section | — | Changed | `CHANGELOG.md:12` | — | - BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp |
-| `changelog--0.1.0-alpha.3-2025-01-19` | section | — | [0.1.0-alpha.3] - 2025-01-19 | `CHANGELOG.md:17` | — | - Initial MCP server implementation |
-| `changelog--added` | section | — | Added | `CHANGELOG.md:19` | — | - Initial MCP server implementation |
+| `changelog` | entry | — | Changelog | `CHANGELOG.md:1` | — | All notable changes to this project will be documented in this file. |
+| `changelog--unreleased` | section | — | [Unreleased] | `CHANGELOG.md:8` | — | - Updated all dependencies to match webpuppet v0.1.0-alpha.3 |
+| `changelog--0.1.0-alpha.3-2026-01-09` | section | — | [0.1.0-alpha.3] - 2026-01-09 | `CHANGELOG.md:10` | — | - Updated all dependencies to match webpuppet v0.1.0-alpha.3 |
+| `changelog--changed` | section | — | Changed | `CHANGELOG.md:12` | — | - Updated all dependencies to match webpuppet v0.1.0-alpha.3 |
+| `changelog--infrastructure` | section | — | Infrastructure | `CHANGELOG.md:19` | — | - Aligned with upstream webpuppet-rs v0.1.0-alpha.3 release |
+| `changelog--0.1.0-alpha.2-2024-12-20` | section | — | [0.1.0-alpha.2] - 2024-12-20 | `CHANGELOG.md:22` | — | - Initial MCP server implementation |
+| `changelog--added` | section | — | Added | `CHANGELOG.md:24` | — | - Initial MCP server implementation |
 

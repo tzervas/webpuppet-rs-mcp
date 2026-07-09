@@ -4,9 +4,9 @@
 [index]
 schema = "tero-layer1-v1"
 repo = "webpuppet-rs-mcp"
-generated_at = "2026-07-09T00:53:22Z"
-item_count = 51
-source_files = 5
+generated_at = "2026-07-09T01:13:30Z"
+item_count = 63
+source_files = 7
 generator = "tero-mcp/scripts/generate_lite_index.py"
 honesty = "Empirical/Declared — markdown heading heuristic; source is ground truth"
 command = "python3 /path/to/tero-mcp/scripts/generate_lite_index.py --root /root/git/webpuppet-rs-mcp"
