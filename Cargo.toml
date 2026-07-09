@@ -1,13 +1,11 @@
 [package]
-name = "webpuppet-mcp"
-version = "0.1.5-alpha"
+name = "embeddenator-webpuppet-mcp"
+version = "0.1.0-alpha.3"
 edition = "2021"
 authors = ["Tyler Zervas <tz-dev@vectorweight.com>"]
-description = "MCP (Model Context Protocol) server exposing webpuppet browser automation as tools for AI assistants"
+description = "MCP (Model Context Protocol) server for webpuppet browser automation"
 license = "MIT"
-repository = "https://github.com/tzervas/webpuppet-rs-mcp"
-documentation = "https://docs.rs/webpuppet-mcp"
-readme = "README.md"
+repository = "https://github.com/tzervas/embeddenator-webpuppet-mcp"
 keywords = ["mcp", "browser-automation", "ai", "copilot", "vscode"]
 categories = ["web-programming", "development-tools"]
 
@@ -18,40 +16,40 @@ http = ["dep:axum", "dep:tower", "dep:tower-http"]
 
 [dependencies]
 # Webpuppet core - enable all providers for full support
-webpuppet = { version = "^0.1.5-alpha", features = ["all-providers"] }
+embeddenator-webpuppet = { git = "https://github.com/tzervas/webpuppet-rs", tag = "v0.1.0-alpha.3", features = ["all-providers"] }
 
 # Async runtime
-tokio = { version = "^1.35", features = ["full", "sync"] }
-futures = "^0.3"
-async-trait = "^0.1"
+tokio = { version = "=1.49.0", features = ["full", "sync"] }
+futures = "=0.3.31"
+async-trait = "=0.1.89"
 
 # MCP protocol - JSON-RPC 2.0 over stdio
-serde = { version = "^1.0", features = ["derive"] }
-serde_json = "^1.0"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.148"
 
 # CLI
-clap = { version = "^4.4", features = ["derive"] }
+clap = { version = "=4.5.26", features = ["derive"] }
 
 # HTTP server (optional)
-axum = { version = "^0.8", optional = true }
-tower = { version = "^0.5", optional = true }
-tower-http = { version = "^0.6", features = ["cors", "trace"], optional = true }
+axum = { version = "=0.7.7", optional = true }
+tower = { version = "=0.4.13", optional = true }
+tower-http = { version = "=0.5.2", features = ["cors", "trace"], optional = true }
 
 # Error handling
-thiserror = "^2.0"
-anyhow = "^1.0"
+thiserror = "=1.0.69"
+anyhow = "=1.0.100"
 
 # Logging
-tracing = "^0.1"
-tracing-subscriber = { version = "^0.3", features = ["env-filter", "json"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
 
 # Utilities
-uuid = { version = "^1.6", features = ["v4"] }
-chrono = { version = "^0.4", features = ["serde"] }
+uuid = { version = "=1.19.0", features = ["v4"] }
+chrono = { version = "=0.4.42", features = ["serde"] }
 
 [[bin]]
 name = "webpuppet-mcp"
 path = "src/main.rs"
 
 [dev-dependencies]
-tokio-test = "^0.4"
+tokio-test = "=0.4.4"

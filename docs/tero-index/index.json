@@ -1,0 +1,509 @@
+{
+  "generated": "Empirical/Declared — lite heading/line heuristic over markdown in webpuppet-rs-mcp via tero-mcp/scripts/generate_lite_index.py; source files are ground truth. Generated 2026-07-09.",
+  "item_tag": "Empirical/Declared",
+  "siblings": [],
+  "items": [
+    {
+      "anchor": "contributing",
+      "family": "doc",
+      "kind": "section",
+      "title": "Contributing to This Project",
+      "file": "CONTRIBUTING.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "Thank you for your interest in contributing!"
+    },
+    {
+      "anchor": "contributing--development-setup",
+      "family": "doc",
+      "kind": "section",
+      "title": "Development Setup",
+      "file": "CONTRIBUTING.md",
+      "line": 5,
+      "tag": "Empirical/Declared",
+      "summary": "1. Clone the repository"
+    },
+    {
+      "anchor": "contributing--pull-request-process",
+      "family": "doc",
+      "kind": "section",
+      "title": "Pull Request Process",
+      "file": "CONTRIBUTING.md",
+      "line": 12,
+      "tag": "Empirical/Declared",
+      "summary": "1. Fork the repository"
+    },
+    {
+      "anchor": "contributing--code-style",
+      "family": "doc",
+      "kind": "section",
+      "title": "Code Style",
+      "file": "CONTRIBUTING.md",
+      "line": 20,
+      "tag": "Empirical/Declared",
+      "summary": "- Use cargo fmt for formatting"
+    },
+    {
+      "anchor": "contributing--license",
+      "family": "doc",
+      "kind": "section",
+      "title": "License",
+      "file": "CONTRIBUTING.md",
+      "line": 27,
+      "tag": "Empirical/Declared",
+      "summary": "By contributing, you agree that your contributions will be licensed under the MIT License."
+    },
+    {
+      "anchor": "readme",
+      "family": "doc",
+      "kind": "other",
+      "title": "webpuppet-rs-mcp",
+      "file": "README.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "MCP (Model Context Protocol) server for webpuppet browser automation."
+    },
+    {
+      "anchor": "readme--features",
+      "family": "doc",
+      "kind": "section",
+      "title": "Features",
+      "file": "README.md",
+      "line": 7,
+      "tag": "Empirical/Declared",
+      "summary": "- MCP-compliant: Implements JSON-RPC 2.0 over stdio (standard MCP transport)"
+    },
+    {
+      "anchor": "readme--available-tools",
+      "family": "doc",
+      "kind": "section",
+      "title": "Available Tools",
+      "file": "README.md",
+      "line": 16,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "readme--installation",
+      "family": "doc",
+      "kind": "section",
+      "title": "Installation",
+      "file": "README.md",
+      "line": 31,
+      "tag": "Empirical/Declared",
+      "summary": "cargo install --path ."
+    },
+    {
+      "anchor": "readme--build-and-install",
+      "family": "doc",
+      "kind": "other",
+      "title": "Build and install",
+      "file": "README.md",
+      "line": 34,
+      "tag": "Empirical/Declared",
+      "summary": "cargo install --path ."
+    },
+    {
+      "anchor": "readme--or-run-from-source",
+      "family": "doc",
+      "kind": "other",
+      "title": "Or run from source",
+      "file": "README.md",
+      "line": 37,
+      "tag": "Empirical/Declared",
+      "summary": "cargo run -p webpuppet-mcp -- --stdio"
+    },
+    {
+      "anchor": "readme--usage-with-vs-code-github-copilot",
+      "family": "doc",
+      "kind": "section",
+      "title": "Usage with VS Code / GitHub Copilot",
+      "file": "README.md",
+      "line": 41,
+      "tag": "Empirical/Declared",
+      "summary": "Add to your .vscode/mcp.json:"
+    },
+    {
+      "anchor": "readme--usage-with-claude-desktop",
+      "family": "doc",
+      "kind": "section",
+      "title": "Usage with Claude Desktop",
+      "file": "README.md",
+      "line": 72,
+      "tag": "Empirical/Declared",
+      "summary": "Add to your claudedesktopconfig.json:"
+    },
+    {
+      "anchor": "readme--human-intervention-system",
+      "family": "doc",
+      "kind": "section",
+      "title": "Human Intervention System",
+      "file": "README.md",
+      "line": 87,
+      "tag": "Empirical/Declared",
+      "summary": "The MCP server includes tools for human-in-the-loop workflows:"
+    },
+    {
+      "anchor": "readme--when-intervention-is-needed",
+      "family": "doc",
+      "kind": "section",
+      "title": "When Intervention is Needed",
+      "file": "README.md",
+      "line": 91,
+      "tag": "Empirical/Declared",
+      "summary": "- Captcha: reCAPTCHA, hCaptcha, Cloudflare challenges"
+    },
+    {
+      "anchor": "readme--workflow",
+      "family": "doc",
+      "kind": "section",
+      "title": "Workflow",
+      "file": "README.md",
+      "line": 98,
+      "tag": "Empirical/Declared",
+      "summary": "1. Agent calls webpuppetinterventionstatus to check state"
+    },
+    {
+      "anchor": "readme--example",
+      "family": "doc",
+      "kind": "section",
+      "title": "Example",
+      "file": "README.md",
+      "line": 106,
+      "tag": "Empirical/Declared",
+      "summary": "Agent: \"I need to send a prompt to Claude but see a captcha...\""
+    },
+    {
+      "anchor": "readme--security-model",
+      "family": "doc",
+      "kind": "section",
+      "title": "Security Model",
+      "file": "README.md",
+      "line": 118,
+      "tag": "Empirical/Declared",
+      "summary": "All operations are subject to the webpuppet permission system:"
+    },
+    {
+      "anchor": "readme--default-secure-policy",
+      "family": "doc",
+      "kind": "section",
+      "title": "Default (Secure) Policy",
+      "file": "README.md",
+      "line": 122,
+      "tag": "Empirical/Declared",
+      "summary": "- ✅ Allowed: Navigate, ReadContent, SendPrompt, ReadResponse, NewConversation, ContinueConversation, Screenshot"
+    },
+    {
+      "anchor": "readme--permission-policies",
+      "family": "doc",
+      "kind": "section",
+      "title": "Permission Policies",
+      "file": "README.md",
+      "line": 130,
+      "tag": "Empirical/Declared",
+      "summary": "webpuppet-mcp --policy secure"
+    },
+    {
+      "anchor": "readme--secure-default-blocks-destructive-operations-allows-ai-interaction",
+      "family": "doc",
+      "kind": "other",
+      "title": "Secure (default) - blocks destructive operations, allows AI interaction",
+      "file": "README.md",
+      "line": 133,
+      "tag": "Empirical/Declared",
+      "summary": "webpuppet-mcp --policy secure"
+    },
+    {
+      "anchor": "readme--read-only-only-allows-reading-no-prompts-or-modifications",
+      "family": "doc",
+      "kind": "other",
+      "title": "Read-only - only allows reading, no prompts or modifications",
+      "file": "README.md",
+      "line": 136,
+      "tag": "Empirical/Declared",
+      "summary": "webpuppet-mcp --policy readonly"
+    },
+    {
+      "anchor": "readme--permissive-allows-most-non-destructive-operations-use-with-caution",
+      "family": "doc",
+      "kind": "other",
+      "title": "Permissive - allows most non-destructive operations (use with caution)",
+      "file": "README.md",
+      "line": 139,
+      "tag": "Empirical/Declared",
+      "summary": "webpuppet-mcp --policy permissive"
+    },
+    {
+      "anchor": "readme--response-screening",
+      "family": "doc",
+      "kind": "section",
+      "title": "Response Screening",
+      "file": "README.md",
+      "line": 143,
+      "tag": "Empirical/Declared",
+      "summary": "All AI responses are automatically screened for:"
+    },
+    {
+      "anchor": "readme--example-tool-calls",
+      "family": "doc",
+      "kind": "section",
+      "title": "Example Tool Calls",
+      "file": "README.md",
+      "line": 154,
+      "tag": "Empirical/Declared",
+      "summary": "{"
+    },
+    {
+      "anchor": "readme--send-a-prompt",
+      "family": "doc",
+      "kind": "section",
+      "title": "Send a Prompt",
+      "file": "README.md",
+      "line": 156,
+      "tag": "Empirical/Declared",
+      "summary": "{"
+    },
+    {
+      "anchor": "readme--check-permission",
+      "family": "doc",
+      "kind": "section",
+      "title": "Check Permission",
+      "file": "README.md",
+      "line": 174,
+      "tag": "Empirical/Declared",
+      "summary": "{"
+    },
+    {
+      "anchor": "readme--architecture",
+      "family": "doc",
+      "kind": "section",
+      "title": "Architecture",
+      "file": "README.md",
+      "line": 205,
+      "tag": "Empirical/Declared",
+      "summary": "┌─────────────────────────────────────────────────┐"
+    },
+    {
+      "anchor": "readme--license",
+      "family": "doc",
+      "kind": "section",
+      "title": "License",
+      "file": "README.md",
+      "line": 241,
+      "tag": "Empirical/Declared",
+      "summary": "MIT"
+    },
+    {
+      "anchor": "readme--status-roadmap",
+      "family": "doc",
+      "kind": "section",
+      "title": "Status & roadmap",
+      "file": "README.md",
+      "line": 245,
+      "tag": "Empirical/Declared",
+      "summary": "- [Assessment & gaps](docs/ASSESSMENT.md)"
+    },
+    {
+      "anchor": "assessment",
+      "family": "doc",
+      "kind": "note",
+      "title": "webpuppet-rs-mcp — Assessment & Gap Analysis",
+      "file": "docs/ASSESSMENT.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "Date: 2026-07-08"
+    },
+    {
+      "anchor": "assessment--1.-maturity-2-5",
+      "family": "doc",
+      "kind": "section",
+      "title": "1. Maturity: **2 / 5**",
+      "file": "docs/ASSESSMENT.md",
+      "line": 9,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "assessment--2.-branches",
+      "family": "doc",
+      "kind": "section",
+      "title": "2. Branches",
+      "file": "docs/ASSESSMENT.md",
+      "line": 21,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "assessment--3.-gaps",
+      "family": "doc",
+      "kind": "section",
+      "title": "3. Gaps",
+      "file": "docs/ASSESSMENT.md",
+      "line": 31,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "assessment--4.-integration",
+      "family": "doc",
+      "kind": "section",
+      "title": "4. Integration",
+      "file": "docs/ASSESSMENT.md",
+      "line": 43,
+      "tag": "Empirical/Declared",
+      "summary": "MCP only, never default-on in cabal. Chain: security screen → webpuppet tool → screen. Prefer ephemeral profiles from library Wave A."
+    },
+    {
+      "anchor": "roadmap",
+      "family": "doc",
+      "kind": "note",
+      "title": "webpuppet-rs-mcp — Product Roadmap",
+      "file": "docs/ROADMAP.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "status": "Living (2026-07-08)",
+      "summary": "Status: Living (2026-07-08)"
+    },
+    {
+      "anchor": "roadmap--waves",
+      "family": "doc",
+      "kind": "section",
+      "title": "Waves",
+      "file": "docs/ROADMAP.md",
+      "line": 10,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--wave-a-tool-honesty",
+      "family": "doc",
+      "kind": "section",
+      "title": "Wave A — Tool honesty",
+      "file": "docs/ROADMAP.md",
+      "line": 12,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--wave-b-safety",
+      "family": "doc",
+      "kind": "section",
+      "title": "Wave B — Safety",
+      "file": "docs/ROADMAP.md",
+      "line": 21,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--wave-c-release-hygiene",
+      "family": "doc",
+      "kind": "section",
+      "title": "Wave C — Release hygiene",
+      "file": "docs/ROADMAP.md",
+      "line": 30,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--api-plan-mcp-tools",
+      "family": "doc",
+      "kind": "section",
+      "title": "API plan — MCP tools",
+      "file": "docs/ROADMAP.md",
+      "line": 40,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--stable-target-set",
+      "family": "doc",
+      "kind": "section",
+      "title": "Stable target set",
+      "file": "docs/ROADMAP.md",
+      "line": 42,
+      "tag": "Empirical/Declared"
+    },
+    {
+      "anchor": "roadmap--config",
+      "family": "doc",
+      "kind": "section",
+      "title": "Config",
+      "file": "docs/ROADMAP.md",
+      "line": 60,
+      "tag": "Empirical/Declared",
+      "summary": "[security]"
+    },
+    {
+      "anchor": "roadmap--pr-plan",
+      "family": "doc",
+      "kind": "section",
+      "title": "PR plan",
+      "file": "docs/ROADMAP.md",
+      "line": 74,
+      "tag": "Empirical/Declared",
+      "summary": "1. Docs assessment + roadmap"
+    },
+    {
+      "anchor": "roadmap--non-goals",
+      "family": "doc",
+      "kind": "section",
+      "title": "Non-goals",
+      "file": "docs/ROADMAP.md",
+      "line": 84,
+      "tag": "Empirical/Declared",
+      "summary": "- Default enable in cabal"
+    },
+    {
+      "anchor": "changelog",
+      "family": "changelog",
+      "kind": "entry",
+      "title": "Changelog",
+      "file": "CHANGELOG.md",
+      "line": 1,
+      "tag": "Empirical/Declared",
+      "summary": "All notable changes to webpuppet-mcp will be documented in this file."
+    },
+    {
+      "anchor": "changelog--unreleased",
+      "family": "changelog",
+      "kind": "section",
+      "title": "[Unreleased]",
+      "file": "CHANGELOG.md",
+      "line": 8,
+      "tag": "Empirical/Declared",
+      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+    },
+    {
+      "anchor": "changelog--0.1.0-alpha.4-2025-01-22",
+      "family": "changelog",
+      "kind": "section",
+      "title": "[0.1.0-alpha.4] - 2025-01-22",
+      "file": "CHANGELOG.md",
+      "line": 10,
+      "tag": "Empirical/Declared",
+      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+    },
+    {
+      "anchor": "changelog--changed",
+      "family": "changelog",
+      "kind": "section",
+      "title": "Changed",
+      "file": "CHANGELOG.md",
+      "line": 12,
+      "tag": "Empirical/Declared",
+      "summary": "- BREAKING: Renamed crate from embeddenator-webpuppet-mcp to webpuppet-mcp"
+    },
+    {
+      "anchor": "changelog--0.1.0-alpha.3-2025-01-19",
+      "family": "changelog",
+      "kind": "section",
+      "title": "[0.1.0-alpha.3] - 2025-01-19",
+      "file": "CHANGELOG.md",
+      "line": 17,
+      "tag": "Empirical/Declared",
+      "summary": "- Initial MCP server implementation"
+    },
+    {
+      "anchor": "changelog--added",
+      "family": "changelog",
+      "kind": "section",
+      "title": "Added",
+      "file": "CHANGELOG.md",
+      "line": 19,
+      "tag": "Empirical/Declared",
+      "summary": "- Initial MCP server implementation"
+    }
+  ],
+  "flagged": []
+}
