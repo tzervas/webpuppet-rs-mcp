@@ -4,6 +4,66 @@
   "siblings": [],
   "items": [
     {
+      "anchor": "agents",
+      "family": "doc",
+      "kind": "other",
+      "title": "AGENTS.md — webpuppet-rs-mcp",
+      "file": "AGENTS.md",
+      "line": 2,
+      "tag": "Empirical/Declared",
+      "summary": "Use Tero + cabal-devmelopner for work here."
+    },
+    {
+      "anchor": "agents--tero-layer-1-corpus-index",
+      "family": "doc",
+      "kind": "section",
+      "title": "Tero (Layer-1 corpus index)",
+      "file": "AGENTS.md",
+      "line": 6,
+      "tag": "Empirical/Declared",
+      "summary": "Repo has docs/tero-index/index.json (generated/ refreshed via tero-mcp/scripts/generateliteindex.py)."
+    },
+    {
+      "anchor": "agents--agent-with-context",
+      "family": "doc",
+      "kind": "other",
+      "title": "agent with context:",
+      "file": "AGENTS.md",
+      "line": 18,
+      "tag": "Empirical/Declared",
+      "summary": "uv run --project ../cabal-devmelopner cabal-devmelopner \"task description here\" --use-tero"
+    },
+    {
+      "anchor": "agents--working-with-cabal-devmelopner-agent-tool",
+      "family": "doc",
+      "kind": "section",
+      "title": "Working with cabal-devmelopner agent tool",
+      "file": "AGENTS.md",
+      "line": 24,
+      "tag": "Empirical/Declared",
+      "summary": "This project is prepared for integration:"
+    },
+    {
+      "anchor": "agents--local-checks",
+      "family": "doc",
+      "kind": "section",
+      "title": "Local checks",
+      "file": "AGENTS.md",
+      "line": 36,
+      "tag": "Empirical/Declared",
+      "summary": "Look for:"
+    },
+    {
+      "anchor": "agents--further-reading",
+      "family": "doc",
+      "kind": "section",
+      "title": "Further reading",
+      "file": "AGENTS.md",
+      "line": 44,
+      "tag": "Empirical/Declared",
+      "summary": "- README.md"
+    },
+    {
       "anchor": "contributing",
       "family": "doc",
       "kind": "section",
