@@ -1,4 +1,4 @@
-# embeddenator-webpuppet-mcp
+# webpuppet-rs-mcp
 
 MCP (Model Context Protocol) server for webpuppet browser automation.
 
@@ -35,7 +35,7 @@ This crate provides a standards-compliant MCP server that exposes webpuppet func
 cargo install --path .
 
 # Or run from source
-cargo run -p embeddenator-webpuppet-mcp -- --stdio
+cargo run -p webpuppet-mcp -- --stdio
 ```
 
 ## Usage with VS Code / GitHub Copilot
@@ -61,8 +61,8 @@ Or if running from cargo:
   "servers": {
     "webpuppet": {
       "command": "cargo",
-      "args": ["run", "-p", "embeddenator-webpuppet-mcp", "--", "--stdio"],
-      "cwd": "/path/to/embeddenator",
+      "args": ["run", "-p", "webpuppet-mcp", "--", "--stdio"],
+      "cwd": "/path/to/webpuppet",
       "env": {}
     }
   }
@@ -230,7 +230,7 @@ Response:
 └─────────────────────┬───────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────┐
-│         embeddenator-webpuppet                   │
+│         webpuppet                   │
 │  - Browser automation (Brave/Chrome)             │
 │  - AI provider integration                       │
 │  - Content screening                             │
@@ -241,3 +241,8 @@ Response:
 ## License
 
 MIT
+
+## Status & roadmap
+
+- [Assessment & gaps](docs/ASSESSMENT.md)
+- [Product roadmap & API plans](docs/ROADMAP.md)
