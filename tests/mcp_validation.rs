@@ -51,7 +51,7 @@ impl McpTestClient {
     async fn spawn() -> Result<Self, Box<dyn std::error::Error>> {
         // Build the MCP server first
         let build_status = std::process::Command::new("cargo")
-            .args(["build", "-p", "webpuppet-mcp", "--release"])
+            .args(["build", "--bin", "webpuppet-mcp", "--release"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .status()?;
 
@@ -156,6 +156,110 @@ async fn test_initialize_handshake() {
         }
         Err(e) => {
             eprintln!("Initialize request failed: {}", e);
+        }
+    }
+
+    client.close().await;
+}
+
+// ============================================================================
+// Persistent Session Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_persistent_session_workflow() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Open persistent session
+    let open_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 12,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_open",
+            "arguments": {
+                "provider": "grok",
+                "visible": false
+            }
+        })),
+    };
+
+    let mut session_id = String::new();
+    if let Ok(response) = client.send_request(open_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            println!("Open Session result: {}", text);
+            assert!(text.contains("Session Created"));
+
+            // Extract Session ID from format: - **Session ID**: `[UUID]`
+            if let Some(start) = text.find("Session ID**: `") {
+                let rest = &text[start + 15..];
+                if let Some(end) = rest.find('`') {
+                    session_id = rest[..end].to_string();
+                }
+            }
+        }
+    }
+
+    assert!(
+        !session_id.is_empty(),
+        "Should have extracted active session_id"
+    );
+    println!("Extracted active session_id: {}", session_id);
+
+    // Close persistent session
+    let close_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 13,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_close",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(close_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            println!("Close Session result: {}", text);
+            assert!(text.contains("closed successfully"));
         }
     }
 

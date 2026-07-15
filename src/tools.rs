@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 
 use webpuppet::{
     BrowserDetector, InterventionHandler, InterventionState, Operation, PermissionGuard,
-    PromptRequest, Provider, ScreeningConfig, WebPuppet,
+    PromptRequest, Provider, ScreeningConfig, Session, WebPuppet,
 };
 
 use crate::error::{Error, Result};
@@ -29,15 +29,32 @@ pub trait Tool: Send + Sync {
     ) -> Result<ToolCallResult>;
 }
 
+/// Represents an active persistent browser session.
+#[derive(Clone)]
+pub struct ActiveSession {
+    /// Unique session identifier.
+    pub session_id: String,
+    /// WebPuppet session object.
+    pub session: Session,
+    /// Provider name/type.
+    pub provider: Provider,
+    /// Reference to the underlying WebPuppet orchestrator.
+    pub puppet: Arc<WebPuppet>,
+    /// Intervention handler for HITL on this session.
+    pub intervention_handler: Arc<RwLock<InterventionHandler>>,
+}
+
 /// Context passed to tools during execution.
 pub struct ToolContext {
-    /// WebPuppet instance (lazy-initialized).
-    pub puppet: Arc<RwLock<Option<WebPuppet>>>,
+    /// Active persistent sessions map, keyed by session ID.
+    pub sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
+    /// WebPuppet instance (lazy-initialized fallback).
+    pub puppet: Arc<RwLock<Option<Arc<WebPuppet>>>>,
     /// Permission guard.
     pub permissions: Arc<PermissionGuard>,
     /// Screening configuration.
     pub screening_config: ScreeningConfig,
-    /// Intervention handler for human-in-the-loop.
+    /// Global intervention handler (lazy-initialized fallback).
     pub intervention_handler: Arc<RwLock<InterventionHandler>>,
     /// Whether to run browser in headless mode (default: true).
     pub headless: bool,
@@ -47,6 +64,7 @@ impl ToolContext {
     /// Create a new tool context.
     pub fn new(permissions: PermissionGuard) -> Self {
         Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             puppet: Arc::new(RwLock::new(None)),
             permissions: Arc::new(permissions),
             screening_config: ScreeningConfig::default(),
@@ -58,6 +76,7 @@ impl ToolContext {
     /// Create a new tool context with visible browser (non-headless).
     pub fn with_visible_browser(permissions: PermissionGuard) -> Self {
         Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             puppet: Arc::new(RwLock::new(None)),
             permissions: Arc::new(permissions),
             screening_config: ScreeningConfig::default(),
@@ -66,25 +85,22 @@ impl ToolContext {
         }
     }
 
-    /// Get or create the WebPuppet instance.
-    pub async fn get_puppet(&self) -> Result<WebPuppet> {
-        let guard = self.puppet.read().await;
-        if let Some(ref _puppet) = *guard {
-            // Clone isn't implemented, so we'll need to recreate
-            drop(guard);
+    /// Get or create the fallback WebPuppet instance.
+    pub async fn get_puppet(&self) -> Result<Arc<WebPuppet>> {
+        let mut guard = self.puppet.write().await;
+        if let Some(ref puppet) = *guard {
+            Ok(puppet.clone())
         } else {
-            drop(guard);
+            let puppet = WebPuppet::builder()
+                .with_all_providers()
+                .headless(self.headless)
+                .with_screening_config(self.screening_config.clone())
+                .build()
+                .await?;
+            let puppet_arc = Arc::new(puppet);
+            *guard = Some(puppet_arc.clone());
+            Ok(puppet_arc)
         }
-
-        // Create new puppet with headless setting
-        let puppet = WebPuppet::builder()
-            .with_all_providers()
-            .headless(self.headless)
-            .with_screening_config(self.screening_config.clone())
-            .build()
-            .await?;
-
-        Ok(puppet)
     }
 }
 
@@ -176,6 +192,22 @@ impl ToolRegistry {
             browser_status_tool,
         );
 
+        // Persistent Session tools
+        let session_open_tool = Arc::new(SessionOpenTool);
+        tools.insert(
+            session_open_tool.definition().name.clone(),
+            session_open_tool,
+        );
+
+        let session_close_tool = Arc::new(SessionCloseTool);
+        tools.insert(
+            session_close_tool.definition().name.clone(),
+            session_close_tool,
+        );
+
+        let extract_tool = Arc::new(ExtractTool);
+        tools.insert(extract_tool.definition().name.clone(), extract_tool);
+
         Self { tools, context }
     }
 
@@ -209,15 +241,244 @@ impl ToolRegistry {
 // Built-in Tools
 // ============================================================================
 
+/// Tool for opening a persistent session.
+pub struct SessionOpenTool;
+
+#[derive(Debug, Deserialize)]
+struct SessionOpenArgs {
+    /// Optional provider to use for this session (defaults to "grok").
+    provider: Option<String>,
+    /// Optional visibility flag.
+    visible: Option<bool>,
+}
+
+#[async_trait::async_trait]
+impl Tool for SessionOpenTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "webpuppet_session_open".into(),
+            description: "Create a persistent browser session for a specific provider.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "enum": ["claude", "grok", "gemini", "chatgpt", "perplexity", "notebooklm", "kaggle"],
+                        "description": "Provider/tool to initialize (defaults to 'grok')"
+                    },
+                    "visible": {
+                        "type": "boolean",
+                        "description": "Whether to make the browser visible (non-headless)"
+                    }
+                },
+                "required": []
+            }),
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolCallResult> {
+        let args: SessionOpenArgs =
+            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        let provider_str = args.provider.unwrap_or_else(|| "grok".to_string());
+        let provider = match provider_str.to_lowercase().as_str() {
+            "claude" => Provider::Claude,
+            "grok" => Provider::Grok,
+            "gemini" => Provider::Gemini,
+            "chatgpt" | "openai" => Provider::ChatGpt,
+            "perplexity" => Provider::Perplexity,
+            "notebooklm" | "notebook" => Provider::NotebookLm,
+            "kaggle" => Provider::Kaggle,
+            _ => {
+                return Err(Error::InvalidParams(format!(
+                    "unknown provider: {}",
+                    provider_str
+                )))
+            }
+        };
+
+        let headless = !args.visible.unwrap_or(!context.headless);
+
+        // Build a dedicated WebPuppet instance for this session
+        let puppet = WebPuppet::builder()
+            .with_all_providers()
+            .headless(headless)
+            .with_screening_config(context.screening_config.clone())
+            .build()
+            .await?;
+
+        let session = puppet.get_session(provider).await?;
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let intervention_handler = Arc::new(RwLock::new(InterventionHandler::new()));
+
+        let active = ActiveSession {
+            session_id: session_id.clone(),
+            session,
+            provider,
+            puppet: Arc::new(puppet),
+            intervention_handler,
+        };
+
+        context
+            .sessions
+            .write()
+            .await
+            .insert(session_id.clone(), active);
+
+        Ok(ToolCallResult {
+            content: vec![ContentItem::text(format!(
+                "# Session Created\n\n- **Session ID**: `{}`\n- **Provider**: `{}`\n- **Mode**: {}\n\nUse this session ID for subsequent operations.",
+                session_id, provider_str, if headless { "Headless" } else { "Visible" }
+            ))],
+            is_error: false,
+        })
+    }
+}
+
+/// Tool for closing a persistent session.
+pub struct SessionCloseTool;
+
+#[derive(Debug, Deserialize)]
+struct SessionCloseArgs {
+    /// The persistent session ID to close.
+    session_id: String,
+}
+
+#[async_trait::async_trait]
+impl Tool for SessionCloseTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "webpuppet_session_close".into(),
+            description: "Destroy a persistent session and close its browser window.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "The persistent session ID to close"
+                    }
+                },
+                "required": ["session_id"]
+            }),
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolCallResult> {
+        let args: SessionCloseArgs =
+            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        let removed = context.sessions.write().await.remove(&args.session_id);
+
+        if let Some(active) = removed {
+            // Close the puppet browser instance
+            active.puppet.close().await.ok();
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(format!(
+                    "Session `{}` closed successfully.",
+                    args.session_id
+                ))],
+                is_error: false,
+            })
+        } else {
+            Err(Error::InvalidParams(format!(
+                "session not found: {}",
+                args.session_id
+            )))
+        }
+    }
+}
+
+/// Tool for extracting content from a persistent session.
+pub struct ExtractTool;
+
+#[derive(Debug, Deserialize)]
+struct ExtractArgs {
+    /// Active session ID.
+    session_id: String,
+    /// CSS selector to extract.
+    selector: String,
+}
+
+#[async_trait::async_trait]
+impl Tool for ExtractTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "webpuppet_extract".into(),
+            description:
+                "Extract text/CSS content from the active session browser page using a selector."
+                    .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Active session ID"
+                    },
+                    "selector": {
+                        "type": "string",
+                        "description": "CSS selector to extract text from"
+                    }
+                },
+                "required": ["session_id", "selector"]
+            }),
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolCallResult> {
+        context
+            .permissions
+            .require(Operation::ReadResponse)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
+
+        let args: ExtractArgs =
+            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        let active = {
+            let sessions = context.sessions.read().await;
+            sessions.get(&args.session_id).cloned().ok_or_else(|| {
+                Error::InvalidParams(format!("session not found: {}", args.session_id))
+            })?
+        };
+
+        // HITL: wait if paused
+        while active.intervention_handler.read().await.is_waiting() {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        let text = active.session.get_text(&args.selector).await?;
+
+        Ok(ToolCallResult {
+            content: vec![ContentItem::text(text)],
+            is_error: false,
+        })
+    }
+}
+
 /// Tool for sending prompts to AI providers.
 pub struct PromptTool;
 
 #[derive(Debug, Deserialize)]
 struct PromptArgs {
+    /// Optional session ID.
+    session_id: Option<String>,
     /// Provider to use (claude, grok, gemini).
     provider: String,
     /// Message to send.
-    message: String,
+    message: Option<String>,
+    /// Alternative message parameter.
+    prompt: Option<String>,
     /// Optional context/system prompt.
     context: Option<String>,
 }
@@ -231,6 +492,10 @@ impl Tool for PromptTool {
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID. If not provided, an ephemeral session will be used."
+                    },
                     "provider": {
                         "type": "string",
                         "enum": ["claude", "grok", "gemini", "chatgpt", "perplexity", "notebooklm", "kaggle"],
@@ -240,12 +505,16 @@ impl Tool for PromptTool {
                         "type": "string",
                         "description": "The prompt message to send"
                     },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Alternative key for the prompt message"
+                    },
                     "context": {
                         "type": "string",
                         "description": "Optional context or system instructions"
                     }
                 },
-                "required": ["provider", "message"]
+                "required": ["provider"]
             }),
         }
     }
@@ -265,6 +534,10 @@ impl Tool for PromptTool {
         let args: PromptArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
+        let prompt_message = args.message.or(args.prompt).ok_or_else(|| {
+            Error::InvalidParams("Either 'message' or 'prompt' must be provided".into())
+        })?;
+
         // Parse provider
         let provider = match args.provider.to_lowercase().as_str() {
             "claude" => Provider::Claude,
@@ -283,37 +556,71 @@ impl Tool for PromptTool {
         };
 
         // Build request
-        let mut request = PromptRequest::new(args.message);
+        let mut request = PromptRequest::new(prompt_message);
         if let Some(ctx) = args.context {
             request = request.with_context(ctx);
         }
 
-        // Get puppet and send prompt
-        let puppet = context.get_puppet().await?;
+        if let Some(ref sid) = args.session_id {
+            // Persistent session
+            let active = {
+                let sessions = context.sessions.read().await;
+                sessions
+                    .get(sid)
+                    .cloned()
+                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
+            };
 
-        // Authenticate if needed
-        puppet.authenticate(provider).await?;
+            // HITL: wait if paused
+            while active.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
 
-        // Send with screening
-        let (response, screening) = puppet.prompt_screened(provider, request).await?;
+            // Authenticate if needed
+            active.puppet.authenticate(provider).await?;
 
-        // Close puppet
-        puppet.close().await.ok();
+            // Send with screening
+            let (response, screening) = active.puppet.prompt_screened(provider, request).await?;
 
-        // Format result
-        let result_text = if screening.passed {
-            response.text
+            // Format result
+            let result_text = if screening.passed {
+                response.text
+            } else {
+                format!(
+                    "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
+                    screening.risk_score, response.text
+                )
+            };
+
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(result_text)],
+                is_error: false,
+            })
         } else {
-            format!(
-                "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
-                screening.risk_score, response.text
-            )
-        };
+            // Get fallback/ephemeral puppet and send prompt
+            let puppet = context.get_puppet().await?;
 
-        Ok(ToolCallResult {
-            content: vec![ContentItem::text(result_text)],
-            is_error: false,
-        })
+            // Authenticate if needed
+            puppet.authenticate(provider).await?;
+
+            // Send with screening
+            let (response, screening) = puppet.prompt_screened(provider, request).await?;
+
+            // Format result
+            let result_text = if screening.passed {
+                response.text
+            } else {
+                format!(
+                    "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
+                    screening.risk_score, response.text
+                )
+            };
+
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(result_text)],
+                is_error: false,
+            })
+        }
     }
 }
 
@@ -470,8 +777,6 @@ impl Tool for ProviderCapabilitiesTool {
             .provider_capabilities(provider)
             .ok_or_else(|| Error::InvalidParams(format!("provider not available: {}", provider)))?;
 
-        puppet.close().await.ok();
-
         Ok(ToolCallResult {
             content: vec![ContentItem::text(
                 serde_json::to_string_pretty(&json!({
@@ -563,8 +868,12 @@ pub struct ScreenshotTool;
 
 #[derive(Debug, Deserialize)]
 struct ScreenshotArgs {
-    /// URL to screenshot.
-    url: String,
+    /// Optional active session ID.
+    session_id: Option<String>,
+    /// Optional URL to navigate to before capture (if session_id is not provided).
+    url: Option<String>,
+    /// Optional path to save the screenshot.
+    path: Option<String>,
 }
 
 #[async_trait::async_trait]
@@ -572,17 +881,24 @@ impl Tool for ScreenshotTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "webpuppet_screenshot".into(),
-            description: "Take a screenshot of a web page. Only allowed domains can be accessed."
-                .into(),
+            description: "Take a screenshot of a web page.".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID."
+                    },
                     "url": {
                         "type": "string",
-                        "description": "URL to take a screenshot of"
+                        "description": "Optional URL to take a screenshot of (only if session_id is not provided)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional file path to save the screenshot to"
                     }
                 },
-                "required": ["url"]
+                "required": []
             }),
         }
     }
@@ -592,28 +908,80 @@ impl Tool for ScreenshotTool {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let args: ScreenshotArgs =
-            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
-
-        // Check permissions for this URL
-        context
-            .permissions
-            .require_with_url(Operation::Navigate, &args.url)
-            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
-
         context
             .permissions
             .require(Operation::Screenshot)
             .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
-        // For now, return a placeholder since actual screenshot requires full browser impl
-        Ok(ToolCallResult {
-            content: vec![ContentItem::text(format!(
-                "Screenshot of `{}` would be captured here.\n\n*Note: Full browser implementation required for actual screenshots.*",
-                args.url
-            ))],
-            is_error: false,
-        })
+        let args: ScreenshotArgs =
+            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        let path_ref = args.path.as_deref().map(std::path::Path::new);
+
+        if let Some(ref sid) = args.session_id {
+            let active = {
+                let sessions = context.sessions.read().await;
+                sessions
+                    .get(sid)
+                    .cloned()
+                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
+            };
+
+            // HITL: wait if paused
+            while active.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
+            let bytes = active.session.screenshot(path_ref).await?;
+            let mut content = Vec::new();
+
+            if let Some(p) = args.path {
+                content.push(ContentItem::text(format!(
+                    "Screenshot saved to `{}` (Session `{}`).",
+                    p, sid
+                )));
+            } else {
+                let base64_data = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &bytes);
+                content.push(ContentItem::image(base64_data, "image/png"));
+            }
+
+            Ok(ToolCallResult {
+                content,
+                is_error: false,
+            })
+        } else {
+            let target_url = args.url.ok_or_else(|| {
+                Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
+            })?;
+
+            // Check permissions for this URL
+            context
+                .permissions
+                .require_with_url(Operation::Navigate, &target_url)
+                .map_err(|e| Error::PermissionDenied(e.to_string()))?;
+
+            let puppet = context.get_puppet().await?;
+            let session = puppet.get_session(Provider::Grok).await?;
+            session.navigate(&target_url).await?;
+
+            let bytes = session.screenshot(path_ref).await?;
+            let mut content = Vec::new();
+
+            if let Some(p) = args.path {
+                content.push(ContentItem::text(format!(
+                    "Screenshot of `{}` saved to `{}`.",
+                    target_url, p
+                )));
+            } else {
+                let base64_data = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &bytes);
+                content.push(ContentItem::image(base64_data, "image/png"));
+            }
+
+            Ok(ToolCallResult {
+                content,
+                is_error: false,
+            })
+        }
     }
 }
 
@@ -710,6 +1078,12 @@ impl Tool for CheckPermissionTool {
 /// Tool for checking intervention status.
 pub struct InterventionStatusTool;
 
+#[derive(Debug, Deserialize)]
+struct InterventionStatusArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for InterventionStatusTool {
     fn definition(&self) -> ToolDefinition {
@@ -718,7 +1092,12 @@ impl Tool for InterventionStatusTool {
             description: "Check if human intervention is needed (captcha, 2FA, etc.). Returns current automation state and any pending intervention reason.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID."
+                    }
+                },
                 "required": []
             }),
         }
@@ -726,12 +1105,25 @@ impl Tool for InterventionStatusTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let handler = context.intervention_handler.read().await;
-        let state = handler.state();
-        let reason = handler.current_reason();
+        let args: InterventionStatusArgs = serde_json::from_value(arguments)
+            .unwrap_or(InterventionStatusArgs { session_id: None });
+
+        let handler = if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+            active.intervention_handler.clone()
+        } else {
+            context.intervention_handler.clone()
+        };
+
+        let handler_guard = handler.read().await;
+        let state = handler_guard.state();
+        let reason = handler_guard.current_reason();
 
         let state_str = match state {
             InterventionState::Running => "🟢 Running",
@@ -765,6 +1157,8 @@ pub struct InterventionCompleteTool;
 
 #[derive(Debug, Deserialize)]
 struct InterventionCompleteArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
     /// Whether the intervention was successful.
     success: bool,
     /// Optional message about the intervention.
@@ -780,6 +1174,10 @@ impl Tool for InterventionCompleteTool {
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID."
+                    },
                     "success": {
                         "type": "boolean",
                         "description": "Whether the intervention was completed successfully"
@@ -802,8 +1200,18 @@ impl Tool for InterventionCompleteTool {
         let args: InterventionCompleteArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
-        let handler = context.intervention_handler.read().await;
-        handler.complete(args.success, args.message.clone());
+        let handler = if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+            active.intervention_handler.clone()
+        } else {
+            context.intervention_handler.clone()
+        };
+
+        let handler_guard = handler.read().await;
+        handler_guard.complete(args.success, args.message.clone());
 
         let status = if args.success {
             "✅ SUCCESS"
@@ -826,6 +1234,12 @@ impl Tool for InterventionCompleteTool {
 /// Tool for pausing automation.
 pub struct InterventionPauseTool;
 
+#[derive(Debug, Deserialize)]
+struct InterventionPauseArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for InterventionPauseTool {
     fn definition(&self) -> ToolDefinition {
@@ -834,7 +1248,12 @@ impl Tool for InterventionPauseTool {
             description: "Pause browser automation. Use this when you need to manually interact with the browser.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID."
+                    }
+                },
                 "required": []
             }),
         }
@@ -842,11 +1261,24 @@ impl Tool for InterventionPauseTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let handler = context.intervention_handler.read().await;
-        handler.pause();
+        let args: InterventionPauseArgs =
+            serde_json::from_value(arguments).unwrap_or(InterventionPauseArgs { session_id: None });
+
+        let handler = if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+            active.intervention_handler.clone()
+        } else {
+            context.intervention_handler.clone()
+        };
+
+        let handler_guard = handler.read().await;
+        handler_guard.pause();
 
         Ok(ToolCallResult {
             content: vec![ContentItem::text(
@@ -860,6 +1292,12 @@ impl Tool for InterventionPauseTool {
 /// Tool for resuming automation.
 pub struct InterventionResumeTool;
 
+#[derive(Debug, Deserialize)]
+struct InterventionResumeArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for InterventionResumeTool {
     fn definition(&self) -> ToolDefinition {
@@ -868,7 +1306,12 @@ impl Tool for InterventionResumeTool {
             description: "Resume browser automation after a pause or manual intervention.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID."
+                    }
+                },
                 "required": []
             }),
         }
@@ -876,11 +1319,24 @@ impl Tool for InterventionResumeTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let handler = context.intervention_handler.read().await;
-        handler.resume();
+        let args: InterventionResumeArgs = serde_json::from_value(arguments)
+            .unwrap_or(InterventionResumeArgs { session_id: None });
+
+        let handler = if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+            active.intervention_handler.clone()
+        } else {
+            context.intervention_handler.clone()
+        };
+
+        let handler_guard = handler.read().await;
+        handler_guard.resume();
 
         Ok(ToolCallResult {
             content: vec![ContentItem::text(
@@ -891,11 +1347,13 @@ impl Tool for InterventionResumeTool {
     }
 }
 
-/// Tool for navigating to a URL (for testing).
+/// Tool for navigating to a URL.
 pub struct NavigateTool;
 
 #[derive(Debug, Deserialize)]
 struct NavigateArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
     /// URL to navigate to.
     url: String,
 }
@@ -910,6 +1368,10 @@ impl Tool for NavigateTool {
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID. If not provided, an ephemeral session is used."
+                    },
                     "url": {
                         "type": "string",
                         "description": "URL to navigate to"
@@ -935,32 +1397,69 @@ impl Tool for NavigateTool {
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
-        // Get puppet and navigate
-        let puppet = context.get_puppet().await?;
+        if let Some(ref sid) = args.session_id {
+            let active = {
+                let sessions = context.sessions.read().await;
+                sessions
+                    .get(sid)
+                    .cloned()
+                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
+            };
 
-        // Get session (using Grok as default provider for navigation)
-        let session = puppet.get_session(Provider::Grok).await?;
+            // HITL: wait if paused
+            while active.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
 
-        // Navigate
-        session.navigate(&args.url).await?;
+            active.session.navigate(&args.url).await?;
 
-        // Get current URL and title
-        let current_url = session
-            .current_url()
-            .await
-            .unwrap_or_else(|_| args.url.clone());
-        let title = session
-            .get_title()
-            .await
-            .unwrap_or_else(|_| "Unknown".into());
+            // Get current URL and title
+            let current_url = active
+                .session
+                .current_url()
+                .await
+                .unwrap_or_else(|_| args.url.clone());
+            let title = active
+                .session
+                .get_title()
+                .await
+                .unwrap_or_else(|_| "Unknown".into());
 
-        Ok(ToolCallResult {
-            content: vec![ContentItem::text(format!(
-                "# Browser Navigated\n\n✅ Successfully navigated to URL.\n\n- **URL**: {}\n- **Title**: {}",
-                current_url, title
-            ))],
-            is_error: false,
-        })
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(format!(
+                    "# Browser Navigated\n\n✅ Successfully navigated to URL (Session `{}`).\n\n- **URL**: {}\n- **Title**: {}",
+                    sid, current_url, title
+                ))],
+                is_error: false,
+            })
+        } else {
+            // Get fallback/ephemeral puppet and navigate
+            let puppet = context.get_puppet().await?;
+
+            // Get session (using Grok as default provider for navigation)
+            let session = puppet.get_session(Provider::Grok).await?;
+
+            // Navigate
+            session.navigate(&args.url).await?;
+
+            // Get current URL and title
+            let current_url = session
+                .current_url()
+                .await
+                .unwrap_or_else(|_| args.url.clone());
+            let title = session
+                .get_title()
+                .await
+                .unwrap_or_else(|_| "Unknown".into());
+
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(format!(
+                    "# Browser Navigated\n\n✅ Successfully navigated to URL.\n\n- **URL**: {}\n- **Title**: {}",
+                    current_url, title
+                ))],
+                is_error: false,
+            })
+        }
     }
 }
 
@@ -991,7 +1490,7 @@ impl Tool for BrowserStatusTool {
         if guard.is_none() {
             return Ok(ToolCallResult {
                 content: vec![ContentItem::text(
-                    "# Browser Status\n\n⚪ No browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
+                    "# Browser Status\n\n⚪ No fallback browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
                 )],
                 is_error: false,
             });

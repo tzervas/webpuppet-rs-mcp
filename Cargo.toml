@@ -16,7 +16,7 @@ http = ["dep:axum", "dep:tower", "dep:tower-http"]
 
 [dependencies]
 # Webpuppet core - enable all providers for full support
-webpuppet = { path = "../webpuppet-rs", features = ["all-providers"] }
+webpuppet = { version = "0.1.5-alpha", features = ["all-providers"] }
 
 # Async runtime
 tokio = { version = "=1.49.0", features = ["full", "sync"] }
@@ -46,6 +46,7 @@ tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
 # Utilities
 uuid = { version = "=1.19.0", features = ["v4"] }
 chrono = { version = "=0.4.42", features = ["serde"] }
+base64 = "=0.22.1"
 
 
 [lib]
