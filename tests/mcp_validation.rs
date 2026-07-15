@@ -218,11 +218,11 @@ async fn test_persistent_session_workflow() {
             println!("Open Session result: {}", text);
             assert!(text.contains("Session Created"));
 
-            // Extract Session ID from format: - **Session ID**: `[UUID]`
-            if let Some(start) = text.find("Session ID**: `") {
-                let rest = &text[start + 15..];
-                if let Some(end) = rest.find('`') {
-                    session_id = rest[..end].to_string();
+            // Robust extraction: find any 36-character string in backticks that looks like a UUID
+            for part in text.split('`') {
+                if part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                    session_id = part.to_string();
+                    break;
                 }
             }
         }
@@ -233,6 +233,74 @@ async fn test_persistent_session_workflow() {
         "Should have extracted active session_id"
     );
     println!("Extracted active session_id: {}", session_id);
+
+    // 1. Navigate using the persistent session
+    let nav_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 14,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "session_id": session_id,
+                "url": "https://x.com/i/grok"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(nav_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 2. Extract using the persistent session
+    let extract_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 15,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_extract",
+            "arguments": {
+                "session_id": session_id,
+                "selector": "body"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(extract_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 3. Prompt using the persistent session
+    let prompt_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 16,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_prompt",
+            "arguments": {
+                "session_id": session_id,
+                "provider": "grok",
+                "message": "Hello!"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(prompt_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 4. Screenshot using the persistent session
+    let screenshot_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 17,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_screenshot",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(screenshot_request).await {
+        assert!(response.error.is_none());
+    }
 
     // Close persistent session
     let close_request = JsonRpcRequest {

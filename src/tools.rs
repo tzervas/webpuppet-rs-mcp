@@ -87,19 +87,59 @@ impl ToolContext {
 
     /// Get or create the fallback WebPuppet instance.
     pub async fn get_puppet(&self) -> Result<Arc<WebPuppet>> {
+        {
+            let guard = self.puppet.read().await;
+            if let Some(ref puppet) = *guard {
+                return Ok(puppet.clone());
+            }
+        }
+
+        // Build outside the lock to prevent holding write lock across slow browser launch
+        let puppet = WebPuppet::builder()
+            .with_all_providers()
+            .headless(self.headless)
+            .with_screening_config(self.screening_config.clone())
+            .build()
+            .await?;
+        let puppet_arc = Arc::new(puppet);
+
         let mut guard = self.puppet.write().await;
-        if let Some(ref puppet) = *guard {
-            Ok(puppet.clone())
+        if let Some(ref existing) = *guard {
+            // Concurrently initialized by another thread
+            Ok(existing.clone())
         } else {
-            let puppet = WebPuppet::builder()
-                .with_all_providers()
-                .headless(self.headless)
-                .with_screening_config(self.screening_config.clone())
-                .build()
-                .await?;
-            let puppet_arc = Arc::new(puppet);
             *guard = Some(puppet_arc.clone());
             Ok(puppet_arc)
+        }
+    }
+
+    /// Unified helper to resolve either a persistent active session or a fallback/ephemeral session.
+    /// Safely handles the HITL loop inside persistent sessions.
+    pub async fn get_active_or_fallback(
+        &self,
+        session_id: Option<&str>,
+        provider: Option<Provider>,
+    ) -> Result<(Session, Arc<WebPuppet>, Arc<RwLock<InterventionHandler>>)> {
+        if let Some(sid) = session_id {
+            let active = {
+                let sessions = self.sessions.read().await;
+                sessions
+                    .get(sid)
+                    .cloned()
+                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
+            };
+
+            // HITL: wait if paused
+            while active.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
+            Ok((active.session, active.puppet, active.intervention_handler))
+        } else {
+            let puppet = self.get_puppet().await?;
+            let target_provider = provider.unwrap_or(Provider::Grok);
+            let session = puppet.get_session(target_provider).await?;
+            Ok((session, puppet, self.intervention_handler.clone()))
         }
     }
 }
@@ -302,15 +342,7 @@ impl Tool for SessionOpenTool {
         };
 
         let headless = !args.visible.unwrap_or(!context.headless);
-
-        // Build a dedicated WebPuppet instance for this session
-        let puppet = WebPuppet::builder()
-            .with_all_providers()
-            .headless(headless)
-            .with_screening_config(context.screening_config.clone())
-            .build()
-            .await?;
-
+        let puppet = context.get_puppet().await?;
         let session = puppet.get_session(provider).await?;
         let session_id = uuid::Uuid::new_v4().to_string();
         let intervention_handler = Arc::new(RwLock::new(InterventionHandler::new()));
@@ -319,7 +351,7 @@ impl Tool for SessionOpenTool {
             session_id: session_id.clone(),
             session,
             provider,
-            puppet: Arc::new(puppet),
+            puppet,
             intervention_handler,
         };
 
@@ -445,19 +477,11 @@ impl Tool for ExtractTool {
         let args: ExtractArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
-        let active = {
-            let sessions = context.sessions.read().await;
-            sessions.get(&args.session_id).cloned().ok_or_else(|| {
-                Error::InvalidParams(format!("session not found: {}", args.session_id))
-            })?
-        };
+        let (session, _puppet, _handler) = context
+            .get_active_or_fallback(Some(&args.session_id), None)
+            .await?;
 
-        // HITL: wait if paused
-        while active.intervention_handler.read().await.is_waiting() {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-
-        let text = active.session.get_text(&args.selector).await?;
+        let text = session.get_text(&args.selector).await?;
 
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
@@ -561,66 +585,30 @@ impl Tool for PromptTool {
             request = request.with_context(ctx);
         }
 
-        if let Some(ref sid) = args.session_id {
-            // Persistent session
-            let active = {
-                let sessions = context.sessions.read().await;
-                sessions
-                    .get(sid)
-                    .cloned()
-                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
-            };
+        let (_session, puppet, _handler) = context
+            .get_active_or_fallback(args.session_id.as_deref(), Some(provider))
+            .await?;
 
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+        // Authenticate if needed
+        puppet.authenticate(provider).await?;
 
-            // Authenticate if needed
-            active.puppet.authenticate(provider).await?;
+        // Send with screening
+        let (response, screening) = puppet.prompt_screened(provider, request).await?;
 
-            // Send with screening
-            let (response, screening) = active.puppet.prompt_screened(provider, request).await?;
-
-            // Format result
-            let result_text = if screening.passed {
-                response.text
-            } else {
-                format!(
-                    "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
-                    screening.risk_score, response.text
-                )
-            };
-
-            Ok(ToolCallResult {
-                content: vec![ContentItem::text(result_text)],
-                is_error: false,
-            })
+        // Format result
+        let result_text = if screening.passed {
+            response.text
         } else {
-            // Get fallback/ephemeral puppet and send prompt
-            let puppet = context.get_puppet().await?;
+            format!(
+                "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
+                screening.risk_score, response.text
+            )
+        };
 
-            // Authenticate if needed
-            puppet.authenticate(provider).await?;
-
-            // Send with screening
-            let (response, screening) = puppet.prompt_screened(provider, request).await?;
-
-            // Format result
-            let result_text = if screening.passed {
-                response.text
-            } else {
-                format!(
-                    "[SECURITY WARNING: Response had risk score {:.2}]\n\n{}",
-                    screening.risk_score, response.text
-                )
-            };
-
-            Ok(ToolCallResult {
-                content: vec![ContentItem::text(result_text)],
-                is_error: false,
-            })
-        }
+        Ok(ToolCallResult {
+            content: vec![ContentItem::text(result_text)],
+            is_error: false,
+        })
     }
 }
 
@@ -919,20 +907,17 @@ impl Tool for ScreenshotTool {
         let path_ref = args.path.as_deref().map(std::path::Path::new);
 
         if let Some(ref sid) = args.session_id {
-            let active = {
-                let sessions = context.sessions.read().await;
-                sessions
-                    .get(sid)
-                    .cloned()
-                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
-            };
+            let (session, _puppet, _handler) =
+                context.get_active_or_fallback(Some(sid), None).await?;
 
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+            // Retrieve current URL and enforce domain policy check before screenshotting
+            let current_url = session.current_url().await.unwrap_or_default();
+            context
+                .permissions
+                .require_with_url(Operation::Navigate, &current_url)
+                .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
-            let bytes = active.session.screenshot(path_ref).await?;
+            let bytes = session.screenshot(path_ref).await?;
             let mut content = Vec::new();
 
             if let Some(p) = args.path {
@@ -954,14 +939,16 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
-            // Check permissions for this URL
+            // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
                 .require_with_url(Operation::Navigate, &target_url)
                 .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
-            let puppet = context.get_puppet().await?;
-            let session = puppet.get_session(Provider::Grok).await?;
+            let (session, _puppet, _handler) = context
+                .get_active_or_fallback(None, Some(Provider::Grok))
+                .await?;
+
             session.navigate(&target_url).await?;
 
             let bytes = session.screenshot(path_ref).await?;
@@ -1397,69 +1384,29 @@ impl Tool for NavigateTool {
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
-        if let Some(ref sid) = args.session_id {
-            let active = {
-                let sessions = context.sessions.read().await;
-                sessions
-                    .get(sid)
-                    .cloned()
-                    .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
-            };
+        let (session, _puppet, _handler) = context
+            .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
+            .await?;
 
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+        session.navigate(&args.url).await?;
 
-            active.session.navigate(&args.url).await?;
+        // Get current URL and title
+        let current_url = session
+            .current_url()
+            .await
+            .unwrap_or_else(|_| args.url.clone());
+        let title = session
+            .get_title()
+            .await
+            .unwrap_or_else(|_| "Unknown".into());
 
-            // Get current URL and title
-            let current_url = active
-                .session
-                .current_url()
-                .await
-                .unwrap_or_else(|_| args.url.clone());
-            let title = active
-                .session
-                .get_title()
-                .await
-                .unwrap_or_else(|_| "Unknown".into());
-
-            Ok(ToolCallResult {
-                content: vec![ContentItem::text(format!(
-                    "# Browser Navigated\n\n✅ Successfully navigated to URL (Session `{}`).\n\n- **URL**: {}\n- **Title**: {}",
-                    sid, current_url, title
-                ))],
-                is_error: false,
-            })
-        } else {
-            // Get fallback/ephemeral puppet and navigate
-            let puppet = context.get_puppet().await?;
-
-            // Get session (using Grok as default provider for navigation)
-            let session = puppet.get_session(Provider::Grok).await?;
-
-            // Navigate
-            session.navigate(&args.url).await?;
-
-            // Get current URL and title
-            let current_url = session
-                .current_url()
-                .await
-                .unwrap_or_else(|_| args.url.clone());
-            let title = session
-                .get_title()
-                .await
-                .unwrap_or_else(|_| "Unknown".into());
-
-            Ok(ToolCallResult {
-                content: vec![ContentItem::text(format!(
-                    "# Browser Navigated\n\n✅ Successfully navigated to URL.\n\n- **URL**: {}\n- **Title**: {}",
-                    current_url, title
-                ))],
-                is_error: false,
-            })
-        }
+        Ok(ToolCallResult {
+            content: vec![ContentItem::text(format!(
+                "# Browser Navigated\n\n✅ Successfully navigated to URL.\n\n- **URL**: {}\n- **Title**: {}",
+                current_url, title
+            ))],
+            is_error: false,
+        })
     }
 }
 
