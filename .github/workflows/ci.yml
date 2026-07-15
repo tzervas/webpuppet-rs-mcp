@@ -19,12 +19,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout webpuppet-rs dependency
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: tzervas/webpuppet-rs
           path: webpuppet-rs
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: webpuppet-rs-mcp
 
