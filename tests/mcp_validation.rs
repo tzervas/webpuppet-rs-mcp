@@ -51,7 +51,7 @@ impl McpTestClient {
     async fn spawn() -> Result<Self, Box<dyn std::error::Error>> {
         // Build the MCP server first
         let build_status = std::process::Command::new("cargo")
-            .args(["build", "-p", "webpuppet-mcp", "--release"])
+            .args(["build", "--bin", "webpuppet-mcp", "--release"])
             .current_dir(env!("CARGO_MANIFEST_DIR"))
             .status()?;
 
@@ -156,6 +156,186 @@ async fn test_initialize_handshake() {
         }
         Err(e) => {
             eprintln!("Initialize request failed: {}", e);
+        }
+    }
+
+    client.close().await;
+}
+
+// ============================================================================
+// Persistent Session Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_persistent_session_workflow() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Open persistent session
+    let open_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 12,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_open",
+            "arguments": {
+                "provider": "grok",
+                "visible": false
+            }
+        })),
+    };
+
+    let mut session_id = String::new();
+    if let Ok(response) = client.send_request(open_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            println!("Open Session result: {}", text);
+            assert!(text.contains("Session Created"));
+
+            if let Some(meta_sid) = result
+                .get("_meta")
+                .and_then(|m| m.get("session_id"))
+                .and_then(|s| s.as_str())
+            {
+                session_id = meta_sid.to_string();
+            } else {
+                // Fallback: find UUID in markdown backticks
+                for part in text.split('`') {
+                    if part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                        session_id = part.to_string();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        !session_id.is_empty(),
+        "Should have extracted active session_id"
+    );
+    println!("Extracted active session_id: {}", session_id);
+
+    // 1. Navigate using the persistent session
+    let nav_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 14,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "session_id": session_id,
+                "url": "https://x.com/i/grok"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(nav_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 2. Extract using the persistent session
+    let extract_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 15,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_extract",
+            "arguments": {
+                "session_id": session_id,
+                "selector": "body"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(extract_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 3. Prompt using the persistent session
+    let prompt_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 16,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_prompt",
+            "arguments": {
+                "session_id": session_id,
+                "provider": "grok",
+                "message": "Hello!"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(prompt_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // 4. Screenshot using the persistent session
+    let screenshot_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 17,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_screenshot",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(screenshot_request).await {
+        assert!(response.error.is_none());
+    }
+
+    // Close persistent session
+    let close_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 13,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_close",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(close_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            println!("Close Session result: {}", text);
+            assert!(text.contains("closed successfully"));
         }
     }
 

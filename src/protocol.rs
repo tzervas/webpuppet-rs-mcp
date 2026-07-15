@@ -281,6 +281,20 @@ pub struct ToolCallResult {
     /// Whether the tool encountered an error.
     #[serde(rename = "isError", default)]
     pub is_error: bool,
+    /// Structured metadata for machine-readable tool outputs (e.g. session_id).
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+impl ToolCallResult {
+    /// Create a successful text result.
+    pub fn text(content: impl Into<String>) -> Self {
+        Self {
+            content: vec![ContentItem::text(content)],
+            is_error: false,
+            meta: None,
+        }
+    }
 }
 
 /// Content item in tool results.
