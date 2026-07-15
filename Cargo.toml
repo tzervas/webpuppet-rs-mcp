@@ -33,7 +33,7 @@ clap = { version = "=4.5.26", features = ["derive"] }
 # HTTP server (optional)
 axum = { version = "=0.7.7", optional = true }
 tower = { version = "=0.4.13", optional = true }
-tower-http = { version = "=0.5.2", features = ["cors", "trace"], optional = true }
+tower-http = { version = "=0.7.0", features = ["cors", "trace"], optional = true }
 
 # Error handling
 thiserror = "=1.0.69"
