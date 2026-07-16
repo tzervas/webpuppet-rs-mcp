@@ -218,11 +218,19 @@ async fn test_persistent_session_workflow() {
             println!("Open Session result: {}", text);
             assert!(text.contains("Session Created"));
 
-            // Robust extraction: find any 36-character string in backticks that looks like a UUID
-            for part in text.split('`') {
-                if part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-                    session_id = part.to_string();
-                    break;
+            if let Some(meta_sid) = result
+                .get("_meta")
+                .and_then(|m| m.get("session_id"))
+                .and_then(|s| s.as_str())
+            {
+                session_id = meta_sid.to_string();
+            } else {
+                // Fallback: find UUID in markdown backticks
+                for part in text.split('`') {
+                    if part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+                        session_id = part.to_string();
+                        break;
+                    }
                 }
             }
         }

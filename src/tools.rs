@@ -367,6 +367,7 @@ impl Tool for SessionOpenTool {
                 session_id, provider_str, if headless { "Headless" } else { "Visible" }
             ))],
             is_error: false,
+            meta: Some(json!({ "session_id": session_id })),
         })
     }
 }
@@ -418,6 +419,7 @@ impl Tool for SessionCloseTool {
                     args.session_id
                 ))],
                 is_error: false,
+                meta: None,
             })
         } else {
             Err(Error::InvalidParams(format!(
@@ -486,6 +488,7 @@ impl Tool for ExtractTool {
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -608,6 +611,7 @@ impl Tool for PromptTool {
         Ok(ToolCallResult {
             content: vec![ContentItem::text(result_text)],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -696,6 +700,7 @@ impl Tool for ListProvidersTool {
                 text
             ))],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -783,6 +788,7 @@ impl Tool for ProviderCapabilitiesTool {
                 .map_err(|e| Error::Internal(e.to_string()))?,
             )],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -817,6 +823,7 @@ impl Tool for DetectBrowsersTool {
                     "No supported browsers detected. Please install Brave, Chrome, or Chromium.",
                 )],
                 is_error: true,
+                meta: None,
             });
         }
 
@@ -847,6 +854,7 @@ impl Tool for DetectBrowsersTool {
                 text
             ))],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -933,6 +941,7 @@ impl Tool for ScreenshotTool {
             Ok(ToolCallResult {
                 content,
                 is_error: false,
+                meta: None,
             })
         } else {
             let target_url = args.url.ok_or_else(|| {
@@ -967,6 +976,7 @@ impl Tool for ScreenshotTool {
             Ok(ToolCallResult {
                 content,
                 is_error: false,
+                meta: None,
             })
         }
     }
@@ -1031,6 +1041,7 @@ impl Tool for CheckPermissionTool {
                         args.operation
                     ))],
                     is_error: true,
+                    meta: None,
                 });
             }
         };
@@ -1054,6 +1065,7 @@ impl Tool for CheckPermissionTool {
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1135,6 +1147,7 @@ impl Tool for InterventionStatusTool {
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1214,6 +1227,7 @@ impl Tool for InterventionCompleteTool {
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1272,6 +1286,7 @@ impl Tool for InterventionPauseTool {
                 "# Automation Paused\n\n⏸️ Automation is now paused. The browser is available for manual interaction.\n\nCall `webpuppet_resume` when ready to continue."
             )],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1330,6 +1345,7 @@ impl Tool for InterventionResumeTool {
                 "# Automation Resumed\n\n▶️ Automation has been resumed. Browser operations will continue."
             )],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1406,6 +1422,7 @@ impl Tool for NavigateTool {
                 current_url, title
             ))],
             is_error: false,
+            meta: None,
         })
     }
 }
@@ -1440,6 +1457,7 @@ impl Tool for BrowserStatusTool {
                     "# Browser Status\n\n⚪ No fallback browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
                 )],
                 is_error: false,
+                meta: None,
             });
         }
 
@@ -1456,6 +1474,7 @@ impl Tool for BrowserStatusTool {
                 visibility
             ))],
             is_error: false,
+            meta: None,
         })
     }
 }
