@@ -14,14 +14,14 @@ permissions:
 jobs:
   create-release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     steps:
       - name: Checkout webpuppet-rs dependency
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: tzervas/webpuppet-rs
           path: webpuppet-rs
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: webpuppet-rs-mcp
       - name: Set up Rust
@@ -36,7 +36,7 @@ jobs:
         run: cargo build --release --all-features
       - name: Create GitHub Release
         if: ${{ inputs.tag != '' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
           generate_release_notes: true
