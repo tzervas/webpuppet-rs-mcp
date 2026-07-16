@@ -17,16 +17,21 @@ This crate provides a standards-compliant MCP server that exposes webpuppet func
 
 | Tool | Description |
 |------|-------------|
-| `webpuppet_prompt` | Send a prompt through browser automation (providers + tools) |
-| `webpuppet_screenshot` | Take screenshots of web pages |
-| `webpuppet_list_providers` | List available AI providers |
+| `webpuppet_session_open` | Create a persistent browser session for a specific provider |
+| `webpuppet_session_close` | Destroy a persistent session and close its browser window |
+| `webpuppet_navigate` | Navigate browser to a specific URL |
+| `webpuppet_screenshot` | Take a screenshot of a web page |
+| `webpuppet_extract` | Extract text/CSS content from the active session browser page using a selector |
+| `webpuppet_prompt` | Send a prompt through browser automation (AI providers + select web tools) |
+| `webpuppet_list_providers` | List available AI providers and their status |
 | `webpuppet_provider_capabilities` | Get declared capabilities for a provider/tool |
-| `webpuppet_detect_browsers` | Detect installed browsers |
-| `webpuppet_check_permission` | Check if an operation is allowed |
-| `webpuppet_intervention_status` | Check if human intervention is needed |
-| `webpuppet_intervention_complete` | Signal that intervention is done |
+| `webpuppet_detect_browsers` | Detect installed browsers that can be used for automation |
+| `webpuppet_check_permission` | Check if an operation is allowed by the security policy |
+| `webpuppet_intervention_status` | Check if human intervention is needed (captcha, 2FA, etc.) |
+| `webpuppet_intervention_complete` | Signal completion of manual intervention |
 | `webpuppet_pause` | Pause automation for manual interaction |
 | `webpuppet_resume` | Resume automation after pause |
+| `webpuppet_browser_status` | Get current browser status including URL, title, and visibility |
 
 ## Installation
 
