@@ -100,6 +100,7 @@ impl McpServer {
         }
 
         tracing::info!("MCP server shutting down");
+        self.tools.shutdown().await;
         Ok(())
     }
 

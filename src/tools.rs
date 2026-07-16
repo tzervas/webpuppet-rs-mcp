@@ -142,6 +142,29 @@ impl ToolContext {
             Ok((session, puppet, self.intervention_handler.clone()))
         }
     }
+
+    /// Close all active sessions and the fallback puppet browser.
+    pub async fn shutdown(&self) {
+        tracing::info!("Closing all active sessions and browsers...");
+
+        // 1. Close and remove all active sessions
+        let mut sessions_guard = self.sessions.write().await;
+        for (sid, active) in sessions_guard.drain() {
+            tracing::info!("Closing session: {}", sid);
+            if let Err(e) = active.puppet.close().await {
+                tracing::warn!("Error closing puppet for session {}: {}", sid, e);
+            }
+        }
+
+        // 2. Close fallback puppet if initialized
+        let mut puppet_guard = self.puppet.write().await;
+        if let Some(puppet) = puppet_guard.take() {
+            tracing::info!("Closing fallback puppet browser...");
+            if let Err(e) = puppet.close().await {
+                tracing::warn!("Error closing fallback puppet browser: {}", e);
+            }
+        }
+    }
 }
 
 /// Registry of available tools.
@@ -159,6 +182,11 @@ impl ToolRegistry {
     /// Create a new tool registry with visible browser.
     pub fn with_visible_browser(permissions: PermissionGuard) -> Self {
         Self::with_context(ToolContext::with_visible_browser(permissions))
+    }
+
+    /// Shutdown all active sessions and the fallback puppet.
+    pub async fn shutdown(&self) {
+        self.context.shutdown().await;
     }
 
     /// Create a new tool registry with custom context.
@@ -483,6 +511,13 @@ impl Tool for ExtractTool {
             .get_active_or_fallback(Some(&args.session_id), None)
             .await?;
 
+        // Retrieve current URL and enforce domain policy check before extracting text
+        let current_url = session.current_url().await.unwrap_or_default();
+        context
+            .permissions
+            .require_with_url(Operation::ReadResponse, &current_url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
+
         let text = session.get_text(&args.selector).await?;
 
         Ok(ToolCallResult {
@@ -581,6 +616,20 @@ impl Tool for PromptTool {
                 )))
             }
         };
+
+        // Validate that provider matches the active session provider
+        if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+            if active.provider != provider {
+                return Err(Error::InvalidParams(format!(
+                    "Session provider mismatch: session '{}' is for provider '{:?}', but prompt requested '{:?}'",
+                    sid, active.provider, provider
+                )));
+            }
+        }
 
         // Build request
         let mut request = PromptRequest::new(prompt_message);
