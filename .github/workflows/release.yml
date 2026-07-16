@@ -14,7 +14,7 @@ permissions:
 jobs:
   create-release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     steps:
       - name: Checkout webpuppet-rs dependency
         uses: actions/checkout@v7
