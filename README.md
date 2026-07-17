@@ -1,5 +1,10 @@
 # webpuppet-rs-mcp
 
+<!-- FLEET-BADGES:BEGIN -->
+[![CI](https://github.com/tzervas/webpuppet-rs-mcp/actions/workflows/fleet-ci.yml/badge.svg?branch=main)](https://github.com/tzervas/webpuppet-rs-mcp/actions/workflows/fleet-ci.yml?query=branch%3Amain)
+[![Security](https://github.com/tzervas/webpuppet-rs-mcp/actions/workflows/fleet-security.yml/badge.svg?branch=main)](https://github.com/tzervas/webpuppet-rs-mcp/actions/workflows/fleet-security.yml?query=branch%3Amain)
+<!-- FLEET-BADGES:END -->
+
 MCP (Model Context Protocol) server for webpuppet browser automation.
 
 This crate provides a standards-compliant MCP server that exposes webpuppet functionality as tools for AI assistants like GitHub Copilot, Claude Desktop, and other MCP-compatible clients.
