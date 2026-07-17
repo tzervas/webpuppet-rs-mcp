@@ -120,6 +120,35 @@ Agent: [calls webpuppet_intervention_complete with success=true]
 Agent: "Thank you! Continuing..."
 ```
 
+## Dependency: security-mcp wrap (DRAFT)
+
+Recommended fleet layout for IDE/cabal agents:
+
+| Piece | Status |
+|-------|--------|
+| **security-mcp** [`security-mcp/wrap`](https://github.com/tzervas/security-mcp/blob/main/docs/bulletins/security-mcp-wrap.md) | **DRAFT** on `main` (merged; not **STABLE**) |
+| **This server** (`webpuppet-mcp`) | Child MCP via `--wrap-command` / `SECURITY_MCP_WRAP_COMMAND` |
+| **In-repo wiring** | Not implemented yet — configure security-mcp externally (see roadmap M-B2) |
+
+Example (operator-owned; validate paths and tokens locally):
+
+```json
+{
+  "servers": {
+    "webpuppet": {
+      "command": "security-mcp",
+      "args": ["--stdio", "--wrap", "--wrap-command", "webpuppet-mcp", "--wrap-arg", "--stdio"],
+      "env": {
+        "SECURITY_MCP_WRAP": "1"
+      }
+    }
+  }
+}
+```
+
+Do **not** treat wrap as a pinned STABLE contract until security-mcp bulletin promotion
+and consumer acknowledgment in this repo are recorded (separate PR).
+
 ## Security Model
 
 All operations are subject to the webpuppet permission system:
