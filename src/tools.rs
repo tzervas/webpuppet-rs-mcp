@@ -120,7 +120,7 @@ impl ToolContext {
         session_id: Option<&str>,
         provider: Option<Provider>,
     ) -> Result<(Session, Arc<WebPuppet>, Arc<RwLock<InterventionHandler>>)> {
-        if let Some(sid) = session_id {
+        let (session, puppet, handler) = if let Some(sid) = session_id {
             let active = {
                 let sessions = self.sessions.read().await;
                 sessions
@@ -128,19 +128,20 @@ impl ToolContext {
                     .cloned()
                     .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
             };
-
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-
-            Ok((active.session, active.puppet, active.intervention_handler))
+            (active.session, active.puppet, active.intervention_handler)
         } else {
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
-            Ok((session, puppet, self.intervention_handler.clone()))
+            (session, puppet, self.intervention_handler.clone())
+        };
+
+        // HITL: wait if paused (supports both active persistent sessions and fallback/ephemeral sessions)
+        while handler.read().await.is_waiting() {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
+
+        Ok((session, puppet, handler))
     }
 
     /// Close all active sessions and the fallback puppet browser.
@@ -1448,6 +1449,12 @@ impl Tool for NavigateTool {
         // Parse arguments
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        // Validate permission for the specific target URL before navigating
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
