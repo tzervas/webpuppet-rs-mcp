@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Enhanced `NavigateTool` target URL validation by enforcing URL-specific permission checks via `context.permissions.require_with_url(Operation::Navigate, &args.url)` before initiating browser navigation.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed

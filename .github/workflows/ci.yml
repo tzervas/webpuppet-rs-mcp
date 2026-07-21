@@ -21,6 +21,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_BUILD_JOBS: 1
+  RUSTFLAGS: "-C debuginfo=0"
 
 jobs:
   build-and-test:
@@ -39,7 +41,14 @@ jobs:
           path: webpuppet-rs-mcp
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: |
+          if command -v pkg-config &>/dev/null && pkg-config --exists openssl; then
+            echo "openssl and pkg-config are already installed"
+          else
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config || \
+            (apt-get update && apt-get install -y libssl-dev pkg-config) || \
+            echo "Failed to install system dependencies, attempting to proceed anyway..."
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
