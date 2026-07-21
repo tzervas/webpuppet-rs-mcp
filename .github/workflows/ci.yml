@@ -39,7 +39,14 @@ jobs:
           path: webpuppet-rs-mcp
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: |
+          if command -v sudo >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+          elif [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null; then
+            apt-get update && apt-get install -y libssl-dev pkg-config
+          else
+            echo "WARNING: No root access, sudo, or apt-get available, skipping system dependency installation"
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
