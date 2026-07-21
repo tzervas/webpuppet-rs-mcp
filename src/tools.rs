@@ -136,6 +136,11 @@ impl ToolContext {
 
             Ok((active.session, active.puppet, active.intervention_handler))
         } else {
+            // HITL: wait if paused
+            while self.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
