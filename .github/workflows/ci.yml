@@ -39,7 +39,12 @@ jobs:
           path: webpuppet-rs-mcp
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: |
+          if [ "$(id -u)" = "0" ]; then
+            apt-get update && apt-get install -y libssl-dev pkg-config
+          else
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
