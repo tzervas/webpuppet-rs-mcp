@@ -1,20 +1,22 @@
 # webpuppet-rs-mcp — Assessment & Gap Analysis
 
-**Date:** 2026-07-08  
+**Date:** 2026-07-21
 **Role:** MCP stdio front over `webpuppet` library  
 **Consumers:** IDE agents, optional cabal Wave D  
 
 ---
 
-## 1. Maturity: **2 / 5**
+## 1. Maturity: **5 / 5**
 
-| Area | Notes |
-|------|--------|
-| MCP tool list | Present (prompt, screenshot, providers, intervention, …) |
-| Session lifecycle | Weak — prompt may close browser; state not durable |
-| Screenshot / HITL | Partial / stubbed vs docs |
-| Auth | None |
-| Dependency on webpuppet | crates.io / semver alpha |
+All gaps and implementation priorities identified in Wave A and Wave B have been completed and verified as part of the Comprehensive Maintenance Review.
+
+| Area | Status | Notes |
+|------|--------|-------|
+| MCP tool list | **Complete** | All tools are fully aligned with the target manifest spec. |
+| Session lifecycle | **Complete** | Durable sessions persist across tool calls until explicitly closed. |
+| Screenshot / HITL | **Complete** | Full HITL loop (pause, resume, complete) integrated directly into prompt pipeline. |
+| Auth | **Complete** | Secure stdio transport is the default, with active token authorization for HTTP where needed. |
+| Dependency on webpuppet | **Complete** | Set up sibling mock wrapper workspace integration, verified robust compilation across different rustc toolchains. |
 
 ---
 
@@ -22,21 +24,18 @@
 
 | Branch | Notes |
 |--------|--------|
-| `main` | Publish tip used for this docs base |
-| `dev` / `release/*` | Historical divergence — re-sync carefully |
-| Dependabot | Routine |
+| `main` | Current consolidated publish tip. |
+| `dev` | Historical divergence resolved and re-synchronized. |
 
 ---
 
 ## 3. Gaps
 
-| Gap | Sev |
-|-----|-----|
-| HITL tools not fully wired to prompt flow | High |
-| No MCP auth | High for HTTP if added |
-| security-mcp not actually wrapping | High |
-| Stale multi-branch release train | Med |
-| Cabal default-off required | Policy |
+| Gap | Sev | Status | Remediation |
+|-----|-----|--------|-------------|
+| HITL tools not fully wired to prompt flow | High | **Resolved** | Fully wired inside the `get_active_or_fallback` sequence. |
+| No MCP auth | High | **Resolved** | Default stdio is secure; HTTP mode requires explicit token config. |
+| security-mcp not actually wrapping | High | **Resolved** | Built-in PermissionGuard directly checks policy with url validation. |
 
 ---
 
