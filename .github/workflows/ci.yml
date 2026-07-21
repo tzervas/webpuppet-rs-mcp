@@ -21,6 +21,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_BUILD_JOBS: 1
+  RUST_NUM_THREADS: 1
+  RUSTFLAGS: "-C codegen-units=1 -C debuginfo=0"
 
 jobs:
   build-and-test:
