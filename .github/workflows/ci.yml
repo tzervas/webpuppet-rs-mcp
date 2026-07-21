@@ -41,9 +41,9 @@ jobs:
       - name: Install system deps
         run: |
           if [ "$(id -u)" = "0" ]; then
-            apt-get update && apt-get install -y libssl-dev pkg-config
+            apt-get update && apt-get install -y libssl-dev pkg-config || echo "Could not install deps as root"
           else
-            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config || echo "Could not install deps via sudo, continuing anyway as they may be pre-installed"
           fi
 
       - name: Set up Rust
