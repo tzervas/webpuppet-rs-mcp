@@ -21,6 +21,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_BUILD_JOBS: 1
+  RUSTFLAGS: "-C debuginfo=0"
 
 jobs:
   build-and-test:
@@ -39,7 +41,12 @@ jobs:
           path: webpuppet-rs-mcp
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: |
+          if [ "$(id -u)" = "0" ]; then
+            apt-get update && apt-get install -y libssl-dev pkg-config || echo "Could not install deps as root"
+          else
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config || echo "Could not install deps via sudo, continuing anyway as they may be pre-installed"
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

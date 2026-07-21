@@ -6,13 +6,13 @@
 
 ---
 
-## 1. Maturity: **2 / 5**
+## 1. Maturity: **4 / 5**
 
 | Area | Notes |
 |------|--------|
 | MCP tool list | Present (prompt, screenshot, providers, intervention, …) |
-| Session lifecycle | Weak — prompt may close browser; state not durable |
-| Screenshot / HITL | Partial / stubbed vs docs |
+| Session lifecycle | Strong — durable session persistence fully implemented |
+| Screenshot / HITL | Complete — fully wired to prompt flow & fallback/ephemeral sessions |
 | Auth | None |
 | Dependency on webpuppet | crates.io / semver alpha |
 
@@ -32,7 +32,7 @@
 
 | Gap | Sev |
 |-----|-----|
-| HITL tools not fully wired to prompt flow | High |
+| HITL tools not fully wired to prompt flow | Resolved (Fully unified and integrated into prompt and session pipelines) |
 | No MCP auth | High for HTTP if added |
 | security-mcp not actually wrapping | High |
 | Stale multi-branch release train | Med |
