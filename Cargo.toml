@@ -1,6 +1,6 @@
 [package]
 name = "embeddenator-webpuppet-mcp"
-version = "0.1.0-alpha.3"
+version = "0.1.5-alpha"
 edition = "2021"
 authors = ["Tyler Zervas <tz-dev@vectorweight.com>"]
 description = "MCP (Model Context Protocol) server for webpuppet browser automation"
