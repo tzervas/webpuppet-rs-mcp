@@ -136,6 +136,11 @@ impl ToolContext {
 
             Ok((active.session, active.puppet, active.intervention_handler))
         } else {
+            // HITL: wait if paused for fallback
+            while self.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
@@ -147,13 +152,20 @@ impl ToolContext {
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
-        let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
-            tracing::info!("Closing session: {}", sid);
-            if let Err(e) = active.puppet.close().await {
-                tracing::warn!("Error closing puppet for session {}: {}", sid, e);
-            }
+        // 1. Close and remove all active sessions concurrently
+        let active_sessions: Vec<(String, ActiveSession)> = {
+            let mut sessions_guard = self.sessions.write().await;
+            sessions_guard.drain().collect()
+        };
+
+        if !active_sessions.is_empty() {
+            let close_futures = active_sessions.into_iter().map(|(sid, active)| async move {
+                tracing::info!("Closing session: {}", sid);
+                if let Err(e) = active.puppet.close().await {
+                    tracing::warn!("Error closing puppet for session {}: {}", sid, e);
+                }
+            });
+            futures::future::join_all(close_futures).await;
         }
 
         // 2. Close fallback puppet if initialized
