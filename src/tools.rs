@@ -2,10 +2,12 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 
 use webpuppet::{
     BrowserDetector, InterventionHandler, InterventionState, Operation, PermissionGuard,
@@ -14,6 +16,94 @@ use webpuppet::{
 
 use crate::error::{Error, Result};
 use crate::protocol::{ContentItem, ToolCallResult, ToolDefinition};
+
+/// Environment variable overriding how long a tool call will wait on a paused session.
+pub const INTERVENTION_WAIT_ENV: &str = "WEBPUPPET_MCP_INTERVENTION_WAIT_SECS";
+
+/// Default bound on how long a single tool call will wait for a human to clear a pause.
+///
+/// This is deliberately far shorter than the library's 5-minute intervention timeout:
+/// an MCP client is waiting synchronously on this tool call, so we must return a real
+/// answer rather than hold the request open indefinitely.
+pub const DEFAULT_INTERVENTION_WAIT_SECS: u64 = 30;
+
+/// How often the paused-session wait re-checks the intervention handler.
+const INTERVENTION_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Resolve the paused-session wait bound, honouring [`INTERVENTION_WAIT_ENV`].
+pub fn default_intervention_wait() -> Duration {
+    let secs = std::env::var(INTERVENTION_WAIT_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_INTERVENTION_WAIT_SECS);
+    Duration::from_secs(secs)
+}
+
+/// Human-readable label for an intervention state.
+pub fn intervention_state_label(state: InterventionState) -> &'static str {
+    match state {
+        InterventionState::Running => "🟢 Running",
+        InterventionState::WaitingForHuman => "🟡 Waiting for human",
+        InterventionState::Resuming => "🔵 Resuming",
+        InterventionState::TimedOut => "🔴 Timed out",
+        InterventionState::Cancelled => "⚫ Cancelled",
+    }
+}
+
+/// Wait for a paused session to be released, but never longer than `max_wait`.
+///
+/// # Why this is bounded
+///
+/// This used to be an unbounded `while handler.is_waiting() { sleep(500ms) }` loop inlined
+/// in [`ToolContext::get_active_or_fallback`]. That deadlocked the whole server: the stdio
+/// transport now dispatches concurrently, but before that fix the reader could not consume
+/// the next line until the in-flight tool call returned, so the very `webpuppet_resume` /
+/// `webpuppet_intervention_complete` call that would clear the pause could never be
+/// delivered. The loop therefore spun forever and the server was wedged.
+///
+/// Concurrent dispatch (see [`crate::server::McpServer::run_stdio`]) makes the release call
+/// deliverable, and this bound makes the failure mode loud instead of silent: if no human
+/// acts within `max_wait` the caller gets [`Error::SessionPaused`] telling it exactly which
+/// tool to call.
+pub async fn wait_while_paused(
+    handler: &Arc<RwLock<InterventionHandler>>,
+    session_id: &str,
+    max_wait: Duration,
+) -> Result<()> {
+    let deadline = Instant::now() + max_wait;
+
+    loop {
+        // Snapshot under the read lock, then drop it before sleeping.
+        let (waiting, reason) = {
+            let guard = handler.read().await;
+            (guard.is_waiting(), guard.current_reason())
+        };
+
+        if !waiting {
+            return Ok(());
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            let reason = reason
+                .map(|r| r.to_string())
+                .unwrap_or_else(|| "paused".to_string());
+            tracing::warn!(
+                session_id = %session_id,
+                reason = %reason,
+                waited_secs = max_wait.as_secs(),
+                "Giving up waiting on paused session; returning SessionPaused to caller"
+            );
+            return Err(Error::SessionPaused {
+                session_id: session_id.to_string(),
+                reason,
+                waited_secs: max_wait.as_secs(),
+            });
+        }
+
+        tokio::time::sleep(INTERVENTION_POLL_INTERVAL.min(remaining)).await;
+    }
+}
 
 /// Tool trait for implementing MCP tools.
 #[async_trait::async_trait]
@@ -58,6 +148,8 @@ pub struct ToolContext {
     pub intervention_handler: Arc<RwLock<InterventionHandler>>,
     /// Whether to run browser in headless mode (default: true).
     pub headless: bool,
+    /// Upper bound on how long a tool call waits for a paused session to be released.
+    pub intervention_wait: Duration,
 }
 
 impl ToolContext {
@@ -70,6 +162,7 @@ impl ToolContext {
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
             headless: true,
+            intervention_wait: default_intervention_wait(),
         }
     }
 
@@ -82,6 +175,7 @@ impl ToolContext {
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
             headless: false,
+            intervention_wait: default_intervention_wait(),
         }
     }
 
@@ -129,10 +223,9 @@ impl ToolContext {
                     .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
             };
 
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+            // HITL: wait if paused, but bounded. An unbounded wait here wedges the
+            // server, because the caller is holding a synchronous tool call open.
+            wait_while_paused(&active.intervention_handler, sid, self.intervention_wait).await?;
 
             Ok((active.session, active.puppet, active.intervention_handler))
         } else {
@@ -1173,13 +1266,7 @@ impl Tool for InterventionStatusTool {
         let state = handler_guard.state();
         let reason = handler_guard.current_reason();
 
-        let state_str = match state {
-            InterventionState::Running => "🟢 Running",
-            InterventionState::WaitingForHuman => "🟡 Waiting for human",
-            InterventionState::Resuming => "🔵 Resuming",
-            InterventionState::TimedOut => "🔴 Timed out",
-            InterventionState::Cancelled => "⚫ Cancelled",
-        };
+        let state_str = intervention_state_label(state);
 
         let text = if let Some(reason) = reason {
             format!(
@@ -1260,22 +1347,49 @@ impl Tool for InterventionCompleteTool {
         };
 
         let handler_guard = handler.read().await;
-        handler_guard.complete(args.success, args.message.clone());
+
+        // `InterventionHandler::complete()` only does a `try_send` on a capacity-1
+        // channel. It does NOT change handler state. That channel only has a receiver
+        // while `request_intervention()` is being awaited, so after a manual
+        // `webpuppet_pause` (or any pause with nothing awaiting) `complete()` was a
+        // no-op and the state stayed `WaitingForHuman` forever -- even though
+        // `webpuppet_intervention_status` explicitly tells the user to call this tool.
+        //
+        // `resume()` is the only public transition out of `WaitingForHuman`, and it
+        // also signals any awaiting `request_intervention`, so it is correct in both
+        // cases. When we are not waiting, fall back to plain `complete()` so a message
+        // delivered to an in-flight intervention is not lost.
+        if args.success {
+            if handler_guard.is_waiting() {
+                handler_guard.resume();
+            } else {
+                handler_guard.complete(true, args.message.clone());
+            }
+        } else {
+            // A failed intervention must not silently look like a success.
+            handler_guard.cancel();
+        }
+
+        let state_after = handler_guard.state();
+        drop(handler_guard);
 
         let status = if args.success {
             "✅ SUCCESS"
         } else {
             "❌ FAILED"
         };
+
+        // Report the state we actually reached rather than asserting an outcome.
         let text = format!(
-            "# Intervention Complete\n\n**Status**: {}\n**Message**: {}\n\nAutomation will now resume.",
+            "# Intervention Complete\n\n**Status**: {}\n**Message**: {}\n**Automation state**: {}\n",
             status,
-            args.message.unwrap_or_else(|| "None".into())
+            args.message.unwrap_or_else(|| "None".into()),
+            intervention_state_label(state_after)
         );
 
         Ok(ToolCallResult {
             content: vec![ContentItem::text(text)],
-            is_error: false,
+            is_error: !args.success,
             meta: None,
         })
     }
