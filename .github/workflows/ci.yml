@@ -38,8 +38,20 @@ jobs:
         with:
           path: webpuppet-rs-mcp
 
-      - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Install system deps (host image may already have them)
+        run: |
+          set -euo pipefail
+          if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libssl 2>/dev/null; then
+            echo "libssl already available"
+            exit 0
+          fi
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+          elif [ "$(id -u)" -eq 0 ]; then
+            apt-get update && apt-get install -y libssl-dev pkg-config
+          else
+            echo "no sudo and not root — assuming work image has OpenSSL headers"
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
