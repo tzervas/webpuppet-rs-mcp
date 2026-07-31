@@ -41,11 +41,29 @@ jobs:
     if: needs.detect.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, podman]
     steps:
+      # path dep: webpuppet = { path = "../webpuppet-rs" }
+      - name: Checkout webpuppet-rs sibling
+        uses: actions/checkout@v4
+        with:
+          repository: tzervas/webpuppet-rs
+          path: webpuppet-rs
       - uses: actions/checkout@v4
+        with:
+          path: webpuppet-rs-mcp
       - name: cargo check
-        run: cargo check --workspace --all-targets
+        working-directory: webpuppet-rs-mcp
+        run: |
+          set -euo pipefail
+          export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+          export CARGO_PROFILE_DEV_DEBUG=0
+          cargo check --workspace --all-targets
       - name: cargo test
-        run: cargo test --workspace
+        working-directory: webpuppet-rs-mcp
+        run: |
+          set -euo pipefail
+          export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+          export CARGO_PROFILE_DEV_DEBUG=0
+          cargo test --workspace
 
   python:
     name: python lint/test

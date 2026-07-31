@@ -1,114 +1,18 @@
 //! MCP server validation tests.
 //!
-//! Tests JSON-RPC 2.0 protocol compliance, tool execution, and error handling.
+//! Tests JSON-RPC 2.0 protocol compliance, tool execution, and error handling against
+//! the real server binary over stdio.
+//!
+//! Every test here previously skipped silently (see `tests/common/mod.rs`). They now run
+//! for real, and any transport failure panics. The one test that genuinely needs a
+//! Chromium-family browser is `#[ignore]`d so its absence shows up in the summary as
+//! `1 ignored` rather than as a pass.
 
-use std::process::Stdio;
-use std::time::Duration;
+mod common;
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
-use tokio::time::timeout;
+use serde_json::json;
 
-// JSON-RPC 2.0 types
-#[derive(Debug, Serialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: u64,
-    method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    params: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcResponse {
-    jsonrpc: String,
-    id: Option<u64>,
-    #[serde(default)]
-    result: Option<Value>,
-    #[serde(default)]
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcError {
-    #[allow(dead_code)]
-    code: i32,
-    #[allow(dead_code)]
-    message: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    data: Option<Value>,
-}
-
-/// MCP test client for validating the server.
-struct McpTestClient {
-    child: Child,
-}
-
-impl McpTestClient {
-    async fn spawn() -> Result<Self, Box<dyn std::error::Error>> {
-        // Build the MCP server first
-        let build_status = std::process::Command::new("cargo")
-            .args(["build", "--bin", "webpuppet-mcp", "--release"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()?;
-
-        if !build_status.success() {
-            return Err("Failed to build MCP server".into());
-        }
-
-        // Path to the binary
-        let binary_path = format!(
-            "{}/../../target/release/webpuppet-mcp",
-            env!("CARGO_MANIFEST_DIR")
-        );
-
-        let child = Command::new(&binary_path)
-            .args(["--policy", "secure"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        Ok(Self { child })
-    }
-
-    async fn send_request(
-        &mut self,
-        request: JsonRpcRequest,
-    ) -> Result<JsonRpcResponse, Box<dyn std::error::Error>> {
-        let stdin = self.child.stdin.as_mut().ok_or("No stdin")?;
-        let stdout = self.child.stdout.as_mut().ok_or("No stdout")?;
-
-        // Send request
-        let request_json = serde_json::to_string(&request)?;
-        stdin.write_all(request_json.as_bytes()).await?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-
-        // Read response with timeout
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-
-        let result = timeout(Duration::from_secs(5), async {
-            reader.read_line(&mut line).await
-        })
-        .await??;
-
-        if result == 0 {
-            return Err("Server closed connection".into());
-        }
-
-        let response: JsonRpcResponse = serde_json::from_str(&line)?;
-        Ok(response)
-    }
-
-    async fn close(mut self) {
-        let _ = self.child.kill().await;
-    }
-}
+use common::{browser_available, McpTestClient};
 
 // ============================================================================
 // Protocol Compliance Tests
@@ -116,290 +20,100 @@ impl McpTestClient {
 
 #[tokio::test]
 async fn test_initialize_handshake() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
 
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "test-client",
-                "version": "0.1.0"
-            }
-        })),
-    };
+    let response = client.initialize().await;
 
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert_eq!(response.jsonrpc, "2.0");
-            assert_eq!(response.id, Some(1));
-            assert!(response.error.is_none(), "Should not have error");
+    assert_eq!(response.jsonrpc, "2.0");
+    assert_eq!(response.id, Some(1));
 
-            if let Some(result) = response.result {
-                println!(
-                    "Initialize result: {}",
-                    serde_json::to_string_pretty(&result).unwrap()
-                );
-                // Check for expected fields
-                assert!(result.get("protocolVersion").is_some());
-                assert!(result.get("serverInfo").is_some());
-            }
-        }
-        Err(e) => {
-            eprintln!("Initialize request failed: {}", e);
-        }
-    }
-
-    client.close().await;
-}
-
-// ============================================================================
-// Persistent Session Tests
-// ============================================================================
-
-#[tokio::test]
-async fn test_persistent_session_workflow() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
-
-    // Initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
-
-    // Open persistent session
-    let open_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 12,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_session_open",
-            "arguments": {
-                "provider": "grok",
-                "visible": false
-            }
-        })),
-    };
-
-    let mut session_id = String::new();
-    if let Ok(response) = client.send_request(open_request).await {
-        assert!(response.error.is_none());
-        if let Some(result) = response.result {
-            let text = result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
-
-            println!("Open Session result: {}", text);
-            assert!(text.contains("Session Created"));
-
-            if let Some(meta_sid) = result
-                .get("_meta")
-                .and_then(|m| m.get("session_id"))
-                .and_then(|s| s.as_str())
-            {
-                session_id = meta_sid.to_string();
-            } else {
-                // Fallback: find UUID in markdown backticks
-                for part in text.split('`') {
-                    if part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-                        session_id = part.to_string();
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    assert!(
-        !session_id.is_empty(),
-        "Should have extracted active session_id"
+    let result = response.result.as_ref().expect("initialize result");
+    assert_eq!(
+        result.get("protocolVersion").and_then(|v| v.as_str()),
+        Some("2024-11-05"),
+        "unexpected protocol version: {result}"
     );
-    println!("Extracted active session_id: {}", session_id);
-
-    // 1. Navigate using the persistent session
-    let nav_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 14,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_navigate",
-            "arguments": {
-                "session_id": session_id,
-                "url": "https://x.com/i/grok"
-            }
-        })),
-    };
-    if let Ok(response) = client.send_request(nav_request).await {
-        assert!(response.error.is_none());
-    }
-
-    // 2. Extract using the persistent session
-    let extract_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 15,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_extract",
-            "arguments": {
-                "session_id": session_id,
-                "selector": "body"
-            }
-        })),
-    };
-    if let Ok(response) = client.send_request(extract_request).await {
-        assert!(response.error.is_none());
-    }
-
-    // 3. Prompt using the persistent session
-    let prompt_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 16,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_prompt",
-            "arguments": {
-                "session_id": session_id,
-                "provider": "grok",
-                "message": "Hello!"
-            }
-        })),
-    };
-    if let Ok(response) = client.send_request(prompt_request).await {
-        assert!(response.error.is_none());
-    }
-
-    // 4. Screenshot using the persistent session
-    let screenshot_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 17,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_screenshot",
-            "arguments": {
-                "session_id": session_id
-            }
-        })),
-    };
-    if let Ok(response) = client.send_request(screenshot_request).await {
-        assert!(response.error.is_none());
-    }
-
-    // Close persistent session
-    let close_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 13,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_session_close",
-            "arguments": {
-                "session_id": session_id
-            }
-        })),
-    };
-
-    if let Ok(response) = client.send_request(close_request).await {
-        assert!(response.error.is_none());
-        if let Some(result) = response.result {
-            let text = result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
-
-            println!("Close Session result: {}", text);
-            assert!(text.contains("closed successfully"));
-        }
-    }
+    let server_info = result.get("serverInfo").expect("serverInfo");
+    assert_eq!(
+        server_info.get("name").and_then(|v| v.as_str()),
+        Some("webpuppet-mcp")
+    );
+    assert!(
+        server_info
+            .get("version")
+            .and_then(|v| v.as_str())
+            .is_some(),
+        "serverInfo.version missing: {server_info}"
+    );
 
     client.close().await;
 }
 
 #[tokio::test]
 async fn test_list_tools() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // First initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let response = client.request(2, "tools/list", None).await;
+    assert!(
+        response.error.is_none(),
+        "tools/list errored: {:?}",
+        response.error
+    );
 
-    // Then list tools
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 2,
-        method: "tools/list".into(),
-        params: None,
-    };
+    let result = response.result.as_ref().expect("tools/list result");
+    let tools = result
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .expect("tools array");
 
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert!(response.error.is_none(), "Should not have error");
+    let names: Vec<&str> = tools
+        .iter()
+        .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+        .collect();
 
-            if let Some(result) = response.result {
-                println!("Tools: {}", serde_json::to_string_pretty(&result).unwrap());
+    // The full stable target set from docs/ROADMAP.md, plus the shipped extras.
+    for expected in [
+        "webpuppet_prompt",
+        "webpuppet_detect_browsers",
+        "webpuppet_check_permission",
+        "webpuppet_intervention_status",
+        "webpuppet_intervention_complete",
+        "webpuppet_pause",
+        "webpuppet_resume",
+        "webpuppet_session_open",
+        "webpuppet_session_close",
+        "webpuppet_navigate",
+        "webpuppet_extract",
+        "webpuppet_screenshot",
+        "webpuppet_list_providers",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "tools/list is missing {expected}; got {names:?}"
+        );
+    }
 
-                if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
-                    // Should have our expected tools
-                    let tool_names: Vec<&str> = tools
-                        .iter()
-                        .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
-                        .collect();
-
-                    println!("Tool names: {:?}", tool_names);
-
-                    // Check for expected tools
-                    assert!(tool_names.contains(&"webpuppet_prompt"));
-                    assert!(tool_names.contains(&"webpuppet_detect_browsers"));
-                    assert!(tool_names.contains(&"webpuppet_check_permission"));
-                    assert!(tool_names.contains(&"webpuppet_intervention_status"));
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("List tools failed: {}", e);
-        }
+    // Every advertised tool must carry a usable JSON Schema.
+    for tool in tools {
+        let name = tool
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("<unnamed>");
+        let schema = tool
+            .get("inputSchema")
+            .unwrap_or_else(|| panic!("tool {name} has no inputSchema"));
+        assert_eq!(
+            schema.get("type").and_then(|t| t.as_str()),
+            Some("object"),
+            "tool {name} inputSchema is not an object schema: {schema}"
+        );
+        assert!(
+            tool.get("description")
+                .and_then(|d| d.as_str())
+                .is_some_and(|d| !d.trim().is_empty()),
+            "tool {name} has an empty description"
+        );
     }
 
     client.close().await;
@@ -407,222 +121,91 @@ async fn test_list_tools() {
 
 #[tokio::test]
 async fn test_tool_call_detect_browsers() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // Initialize first
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let response = client
+        .call_tool(3, "webpuppet_detect_browsers", json!({}))
+        .await;
+    assert!(
+        response.error.is_none(),
+        "detect_browsers errored: {:?}",
+        response.error
+    );
 
-    // Call detect browsers tool
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 3,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_detect_browsers",
-            "arguments": {}
-        })),
-    };
-
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert!(response.error.is_none(), "Should not have error");
-
-            if let Some(result) = response.result {
-                println!(
-                    "Detect browsers result: {}",
-                    serde_json::to_string_pretty(&result).unwrap()
-                );
-
-                // Should have content
-                if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
-                    assert!(!content.is_empty(), "Should have content");
-
-                    // First item should be text
-                    if let Some(text) = content
-                        .first()
-                        .and_then(|c| c.get("text"))
-                        .and_then(|t| t.as_str())
-                    {
-                        println!("Browser detection output:\n{}", text);
-                        // Should mention Brave since it's installed
-                        assert!(
-                            text.contains("Brave") || text.contains("browser"),
-                            "Should detect browsers"
-                        );
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Detect browsers call failed: {}", e);
-        }
-    }
+    // Assert on the report's shape, not on which browsers this particular host has.
+    let text = response.text();
+    assert!(
+        text.contains("Browser") || text.contains("browser"),
+        "detect_browsers output does not look like a browser report:\n{text}"
+    );
 
     client.close().await;
 }
 
 #[tokio::test]
 async fn test_tool_call_check_permission() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // Initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let allowed = client
+        .call_tool(
+            4,
+            "webpuppet_check_permission",
+            json!({"operation": "Navigate"}),
+        )
+        .await;
+    assert!(
+        allowed.error.is_none(),
+        "check_permission errored: {:?}",
+        allowed.error
+    );
+    assert!(
+        allowed.text().contains("ALLOWED"),
+        "Navigate should be allowed under the secure policy:\n{}",
+        allowed.text()
+    );
 
-    // Check permission for allowed operation
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 4,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_check_permission",
-            "arguments": {
-                "operation": "Navigate"
-            }
-        })),
-    };
-
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert!(response.error.is_none());
-            if let Some(result) = response.result {
-                let text = result
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|c| c.get("text"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-
-                println!("Permission check (Navigate): {}", text);
-                assert!(text.contains("ALLOWED"), "Navigate should be allowed");
-            }
-        }
-        Err(e) => eprintln!("Permission check failed: {}", e),
-    }
-
-    // Check permission for blocked operation
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 5,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_check_permission",
-            "arguments": {
-                "operation": "DeleteAccount"
-            }
-        })),
-    };
-
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert!(response.error.is_none());
-            if let Some(result) = response.result {
-                let text = result
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|c| c.get("text"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-
-                println!("Permission check (DeleteAccount): {}", text);
-                assert!(text.contains("DENIED"), "DeleteAccount should be denied");
-            }
-        }
-        Err(e) => eprintln!("Permission check failed: {}", e),
-    }
+    let denied = client
+        .call_tool(
+            5,
+            "webpuppet_check_permission",
+            json!({"operation": "DeleteAccount"}),
+        )
+        .await;
+    assert!(
+        denied.error.is_none(),
+        "check_permission errored: {:?}",
+        denied.error
+    );
+    assert!(
+        denied.text().contains("DENIED"),
+        "DeleteAccount must be denied under the secure policy:\n{}",
+        denied.text()
+    );
 
     client.close().await;
 }
 
 #[tokio::test]
 async fn test_intervention_status() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // Initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let response = client
+        .call_tool(6, "webpuppet_intervention_status", json!({}))
+        .await;
+    assert!(
+        response.error.is_none(),
+        "intervention_status errored: {:?}",
+        response.error
+    );
 
-    // Check intervention status
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 6,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_intervention_status",
-            "arguments": {}
-        })),
-    };
-
-    match client.send_request(request).await {
-        Ok(response) => {
-            assert!(response.error.is_none());
-            if let Some(result) = response.result {
-                let text = result
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|c| c.get("text"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-
-                println!("Intervention status: {}", text);
-                // Should show running state initially
-                assert!(
-                    text.contains("Running") || text.contains("Status"),
-                    "Should show status"
-                );
-            }
-        }
-        Err(e) => eprintln!("Intervention status failed: {}", e),
-    }
+    let text = response.text();
+    assert!(
+        text.contains("Running"),
+        "a freshly started server must report Running, got:\n{text}"
+    );
 
     client.close().await;
 }
@@ -633,89 +216,42 @@ async fn test_intervention_status() {
 
 #[tokio::test]
 async fn test_unknown_method_error() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
 
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 99,
-        method: "nonexistent/method".into(),
-        params: None,
-    };
+    let response = client.request(99, "nonexistent/method", None).await;
 
-    match client.send_request(request).await {
-        Ok(response) => {
-            // Should have an error
-            if let Some(error) = response.error {
-                println!("Error (expected): {} (code: {})", error.message, error.code);
-                // Method not found is -32601
-                assert!(
-                    error.code == -32601
-                        || error.code == -32600
-                        || error.message.contains("not")
-                        || error.message.contains("unknown")
-                );
-            }
-        }
-        Err(e) => eprintln!("Request failed: {}", e),
-    }
+    let error = response
+        .error
+        .as_ref()
+        .expect("unknown method must produce a JSON-RPC error, not a result");
+    assert_eq!(
+        error.code, -32601,
+        "unknown method should be METHOD_NOT_FOUND (-32601), got {}: {}",
+        error.code, error.message
+    );
 
     client.close().await;
 }
 
 #[tokio::test]
 async fn test_unknown_tool_error() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // Initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let response = client.call_tool(100, "nonexistent_tool", json!({})).await;
 
-    // Call unknown tool
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 100,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "nonexistent_tool",
-            "arguments": {}
-        })),
-    };
-
-    match client.send_request(request).await {
-        Ok(response) => {
-            // Should have error or error content
-            if let Some(error) = response.error {
-                println!("Error (expected): {}", error.message);
-                assert!(error.message.contains("not found") || error.message.contains("unknown"));
-            } else if let Some(result) = response.result {
-                // Some implementations return is_error in result
-                if let Some(is_error) = result.get("isError").and_then(|e| e.as_bool()) {
-                    assert!(is_error, "Should indicate error for unknown tool");
-                }
-            }
-        }
-        Err(e) => eprintln!("Request failed: {}", e),
+    // Either a JSON-RPC error or an isError result is acceptable; silence is not.
+    match response.error.as_ref() {
+        Some(error) => assert_eq!(
+            error.code, -32601,
+            "unknown tool should map to -32601, got {}: {}",
+            error.code, error.message
+        ),
+        None => assert!(
+            response.is_error_result(),
+            "unknown tool produced neither an error nor isError: {:?}",
+            response.result
+        ),
     }
 
     client.close().await;
@@ -727,78 +263,142 @@ async fn test_unknown_tool_error() {
 
 #[tokio::test]
 async fn test_pause_resume_workflow() {
-    let mut client = match McpTestClient::spawn().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Skipping test, MCP server not available: {}", e);
-            return;
-        }
-    };
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
 
-    // Initialize
-    let init_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 1,
-        method: "initialize".into(),
-        params: Some(json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "1.0"}
-        })),
-    };
-    let _ = client.send_request(init_request).await;
+    let paused = client.call_tool(10, "webpuppet_pause", json!({})).await;
+    assert!(
+        paused.text().to_lowercase().contains("paused"),
+        "pause did not report a pause:\n{}",
+        paused.text()
+    );
 
-    // Pause
-    let pause_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 10,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_pause",
-            "arguments": {}
-        })),
-    };
+    // The pause must be observable, not just announced.
+    let status = client
+        .call_tool(11, "webpuppet_intervention_status", json!({}))
+        .await;
+    assert!(
+        status.text().contains("Waiting for human"),
+        "after webpuppet_pause the state must be WaitingForHuman, got:\n{}",
+        status.text()
+    );
 
-    if let Ok(response) = client.send_request(pause_request).await {
-        if let Some(result) = response.result {
-            let text = result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
+    let resumed = client.call_tool(12, "webpuppet_resume", json!({})).await;
+    assert!(
+        resumed.text().to_lowercase().contains("resumed"),
+        "resume did not report a resume:\n{}",
+        resumed.text()
+    );
 
-            println!("Pause result: {}", text);
-            assert!(text.contains("Paused") || text.contains("paused"));
-        }
+    let status = client
+        .call_tool(13, "webpuppet_intervention_status", json!({}))
+        .await;
+    assert!(
+        !status.text().contains("Waiting for human"),
+        "webpuppet_resume did not clear the pause:\n{}",
+        status.text()
+    );
+
+    client.close().await;
+}
+
+// ============================================================================
+// Persistent Session Tests
+// ============================================================================
+
+/// Full session lifecycle against a real browser.
+///
+/// Requires a Chromium-family browser and network access to x.com, so it is ignored by
+/// default. Run with `cargo test -- --ignored`. It is `#[ignore]`d rather than
+/// self-skipping so the test summary reports it as ignored instead of as a pass.
+#[tokio::test]
+#[ignore = "requires a Chromium-family browser and network access; run with --ignored"]
+async fn test_persistent_session_workflow() {
+    assert!(
+        browser_available(),
+        "no Chromium-family browser on PATH; install one before running --ignored tests"
+    );
+
+    let mut client = McpTestClient::spawn().await;
+    client.initialize().await;
+
+    let open = client
+        .call_tool(
+            12,
+            "webpuppet_session_open",
+            json!({"provider": "grok", "visible": false}),
+        )
+        .await;
+    assert!(
+        open.error.is_none(),
+        "session_open errored: {:?}",
+        open.error
+    );
+
+    let text = open.text().to_string();
+    assert!(
+        text.contains("Session Created"),
+        "session_open output unexpected:\n{text}"
+    );
+
+    let session_id = open
+        .result
+        .as_ref()
+        .and_then(|r| r.get("_meta"))
+        .and_then(|m| m.get("session_id"))
+        .and_then(|s| s.as_str())
+        .map(str::to_string)
+        .or_else(|| {
+            text.split('`')
+                .find(|part| {
+                    part.len() == 36 && part.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+                })
+                .map(str::to_string)
+        })
+        .expect("session_open must return a session_id");
+
+    for (id, tool, args) in [
+        (
+            14,
+            "webpuppet_navigate",
+            json!({"session_id": session_id, "url": "https://x.com/i/grok"}),
+        ),
+        (
+            15,
+            "webpuppet_extract",
+            json!({"session_id": session_id, "selector": "body"}),
+        ),
+        (
+            17,
+            "webpuppet_screenshot",
+            json!({"session_id": session_id}),
+        ),
+    ] {
+        let response = client.call_tool(id, tool, args).await;
+        assert!(
+            response.error.is_none(),
+            "{tool} errored: {:?}",
+            response.error
+        );
     }
 
-    // Resume
-    let resume_request = JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        id: 11,
-        method: "tools/call".into(),
-        params: Some(json!({
-            "name": "webpuppet_resume",
-            "arguments": {}
-        })),
-    };
-
-    if let Ok(response) = client.send_request(resume_request).await {
-        if let Some(result) = response.result {
-            let text = result
-                .get("content")
-                .and_then(|c| c.as_array())
-                .and_then(|a| a.first())
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
-
-            println!("Resume result: {}", text);
-            assert!(text.contains("Resumed") || text.contains("resumed"));
-        }
-    }
+    let close = client
+        .call_tool(
+            13,
+            "webpuppet_session_close",
+            json!({"session_id": session_id}),
+        )
+        .await;
+    assert!(
+        close.error.is_none(),
+        "session_close errored: {:?}",
+        close.error
+    );
+    assert!(
+        close.text().contains("closed successfully"),
+        "session_close output unexpected:\n{}",
+        close.text()
+    );
 
     client.close().await;
 }

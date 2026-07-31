@@ -31,6 +31,23 @@ pub enum Error {
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 
+    /// A session is paused for human intervention and did not resume in time.
+    ///
+    /// Returned instead of blocking forever. See `tools::wait_while_paused`.
+    #[error(
+        "session {session_id} is paused for human intervention ({reason}); \
+         waited {waited_secs}s. Complete the intervention in the browser, then call \
+         webpuppet_intervention_complete (or webpuppet_resume) and retry this call."
+    )]
+    SessionPaused {
+        /// Session that is paused.
+        session_id: String,
+        /// Human-readable pause reason reported by the intervention handler.
+        reason: String,
+        /// How long the server waited before giving up.
+        waited_secs: u64,
+    },
+
     /// Webpuppet error.
     #[error("webpuppet error: {0}")]
     Webpuppet(#[from] webpuppet::Error),
@@ -57,6 +74,7 @@ impl Error {
             Error::InvalidParams(_) => -32602, // Invalid params
             Error::PermissionDenied(_) => -32000, // Server error
             Error::Webpuppet(_) => -32001,
+            Error::SessionPaused { .. } => -32003,
             Error::Serialization(_) => -32700, // Parse error
             Error::Io(_) => -32002,
             Error::Internal(_) => -32603, // Internal error

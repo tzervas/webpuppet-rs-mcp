@@ -98,7 +98,23 @@ Add to your `claude_desktop_config.json`:
 
 The MCP server includes tools for human-in-the-loop workflows:
 
-### When Intervention is Needed
+### Implementation status (ROADMAP M-A3)
+
+**Only agent-driven intervention works today.** `webpuppet_pause`, `webpuppet_resume`,
+`webpuppet_intervention_status` and `webpuppet_intervention_complete` operate on a real
+intervention handler, and a paused session really does block browser tool calls for that
+session.
+
+**Automatic detection is NOT wired up.** No browser-driving path in this server calls
+`InterventionHandler::request_intervention`, so the server never raises an intervention on
+its own. The underlying `webpuppet` library ships captcha/2FA detectors and a
+`prompt_with_intervention` entry point, but this MCP layer does not yet call them. Until
+it does, a captcha or 2FA prompt surfaces as an ordinary tool failure or an empty
+extraction — the agent has to notice and call `webpuppet_pause` itself.
+
+The categories below are what the *library's* detectors cover, i.e. what automatic
+detection will report once M-A3 is finished. They are not currently detected by this
+server.
 
 - **Captcha**: reCAPTCHA, hCaptcha, Cloudflare challenges
 - **Two-Factor Auth**: SMS codes, TOTP, email verification
@@ -111,7 +127,23 @@ The MCP server includes tools for human-in-the-loop workflows:
 2. If intervention needed, agent notifies user
 3. User completes manual task in visible browser
 4. User/agent calls `webpuppet_intervention_complete` with `success=true`
+   (or `webpuppet_resume`)
 5. Automation resumes
+
+### Waiting on a paused session
+
+A tool call against a paused session waits for the pause to clear, but the wait is
+**bounded**. After the bound elapses the call returns JSON-RPC error `-32003`
+(`session paused for human intervention`), naming the session and the tool to call, rather
+than holding the request open indefinitely.
+
+The bound defaults to 30 seconds and is configured with
+`WEBPUPPET_MCP_INTERVENTION_WAIT_SECS`.
+
+Requests are dispatched concurrently on stdio so the `webpuppet_resume` /
+`webpuppet_intervention_complete` call that clears a pause can be read and executed while
+the paused call is still waiting. Responses may therefore be returned out of order;
+clients correlate them by JSON-RPC `id`, as the spec requires.
 
 ### Example
 
