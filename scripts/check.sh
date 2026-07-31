@@ -20,5 +20,6 @@ else
 fi
 "${CARGO[@]}" clippy --all-targets --all-features -- -D warnings
 "${CARGO[@]}" build --all-features
-"${CARGO[@]}" test --all-features --verbose
+"${CARGO[@]}" build --bin webpuppet-mcp --release
+"${CARGO[@]}" test --all-features --verbose -- --test-threads=1
 echo "OK: checks passed ($(basename "$PWD"))"
