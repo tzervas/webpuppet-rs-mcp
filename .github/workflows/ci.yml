@@ -39,7 +39,14 @@ jobs:
           path: webpuppet-rs-mcp
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+        run: |
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update && apt-get install -y libssl-dev pkg-config
+          elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+          else
+            echo "::warning:: Neither root permissions nor passwordless sudo is available. Skipping system dependency installation of libssl-dev and pkg-config."
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
