@@ -136,6 +136,11 @@ impl ToolContext {
 
             Ok((active.session, active.puppet, active.intervention_handler))
         } else {
+            // HITL: wait if global fallback handler is paused/waiting
+            while self.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
@@ -147,14 +152,19 @@ impl ToolContext {
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
-        let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
+        // 1. Close and remove all active sessions concurrently
+        let sessions = {
+            let mut sessions_guard = self.sessions.write().await;
+            sessions_guard.drain().collect::<Vec<_>>()
+        };
+
+        let close_futures = sessions.into_iter().map(|(sid, active)| async move {
             tracing::info!("Closing session: {}", sid);
             if let Err(e) = active.puppet.close().await {
                 tracing::warn!("Error closing puppet for session {}: {}", sid, e);
             }
-        }
+        });
+        futures::future::join_all(close_futures).await;
 
         // 2. Close fallback puppet if initialized
         let mut puppet_guard = self.puppet.write().await;
@@ -1439,15 +1449,15 @@ impl Tool for NavigateTool {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        // Check permission
-        context
-            .permissions
-            .require(Operation::Navigate)
-            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
-
-        // Parse arguments
+        // Parse arguments first to extract the target URL for validation
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        // Check general and URL-specific permissions before navigation
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
