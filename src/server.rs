@@ -75,6 +75,16 @@ impl McpServer {
 
         tracing::info!("MCP server starting on stdio");
 
+        let loop_result = self.run_stdio_loop(reader, &mut stdout).await;
+
+        tracing::info!("MCP server shutting down");
+        self.tools.shutdown().await;
+
+        loop_result
+    }
+
+    /// Internal helper to run the stdio message loop.
+    async fn run_stdio_loop<R: BufRead, W: Write>(&self, reader: R, stdout: &mut W) -> Result<()> {
         for line in reader.lines() {
             let line = line?;
 
@@ -98,9 +108,6 @@ impl McpServer {
                 break;
             }
         }
-
-        tracing::info!("MCP server shutting down");
-        self.tools.shutdown().await;
         Ok(())
     }
 
