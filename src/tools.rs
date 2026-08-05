@@ -114,13 +114,13 @@ impl ToolContext {
     }
 
     /// Unified helper to resolve either a persistent active session or a fallback/ephemeral session.
-    /// Safely handles the HITL loop inside persistent sessions.
+    /// Safely handles the HITL loop inside both persistent and ephemeral sessions.
     pub async fn get_active_or_fallback(
         &self,
         session_id: Option<&str>,
         provider: Option<Provider>,
     ) -> Result<(Session, Arc<WebPuppet>, Arc<RwLock<InterventionHandler>>)> {
-        if let Some(sid) = session_id {
+        let (session, puppet, handler) = if let Some(sid) = session_id {
             let active = {
                 let sessions = self.sessions.read().await;
                 sessions
@@ -128,32 +128,40 @@ impl ToolContext {
                     .cloned()
                     .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
             };
-
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-
-            Ok((active.session, active.puppet, active.intervention_handler))
+            (active.session, active.puppet, active.intervention_handler)
         } else {
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
-            Ok((session, puppet, self.intervention_handler.clone()))
+            (session, puppet, self.intervention_handler.clone())
+        };
+
+        // HITL: wait if paused
+        while handler.read().await.is_waiting() {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
+
+        Ok((session, puppet, handler))
     }
 
     /// Close all active sessions and the fallback puppet browser.
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
+        // 1. Close and remove all active sessions concurrently
         let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
-            tracing::info!("Closing session: {}", sid);
-            if let Err(e) = active.puppet.close().await {
-                tracing::warn!("Error closing puppet for session {}: {}", sid, e);
-            }
+        let shutdown_futures: Vec<_> = sessions_guard
+            .drain()
+            .map(|(sid, active)| async move {
+                tracing::info!("Closing session: {}", sid);
+                if let Err(e) = active.puppet.close().await {
+                    tracing::warn!("Error closing puppet for session {}: {}", sid, e);
+                }
+            })
+            .collect();
+
+        if !shutdown_futures.is_empty() {
+            futures::future::join_all(shutdown_futures).await;
         }
 
         // 2. Close fallback puppet if initialized
