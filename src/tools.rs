@@ -147,14 +147,18 @@ impl ToolContext {
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
+        // 1. Close and remove all active sessions concurrently
         let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
+        let sessions: Vec<(String, ActiveSession)> = sessions_guard.drain().collect();
+        drop(sessions_guard);
+
+        let close_futures = sessions.into_iter().map(|(sid, active)| async move {
             tracing::info!("Closing session: {}", sid);
             if let Err(e) = active.puppet.close().await {
                 tracing::warn!("Error closing puppet for session {}: {}", sid, e);
             }
-        }
+        });
+        futures::future::join_all(close_futures).await;
 
         // 2. Close fallback puppet if initialized
         let mut puppet_guard = self.puppet.write().await;

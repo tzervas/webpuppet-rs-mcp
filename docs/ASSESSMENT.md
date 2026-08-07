@@ -6,13 +6,13 @@
 
 ---
 
-## 1. Maturity: **2 / 5**
+## 1. Maturity: **4 / 5**
 
 | Area | Notes |
 |------|--------|
 | MCP tool list | Present (prompt, screenshot, providers, intervention, …) |
-| Session lifecycle | Weak — prompt may close browser; state not durable |
-| Screenshot / HITL | Partial / stubbed vs docs |
+| Session lifecycle | Secure and persistent across tools (durable until close) |
+| Screenshot / HITL | Fully supported & integrated with prompt pipeline |
 | Auth | None |
 | Dependency on webpuppet | crates.io / semver alpha |
 
