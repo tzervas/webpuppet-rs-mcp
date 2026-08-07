@@ -19,6 +19,7 @@ else
   "${CARGO[@]}" fmt --check
 fi
 "${CARGO[@]}" clippy --all-targets --all-features -- -D warnings
+"${CARGO[@]}" build --bin webpuppet-mcp --release
 "${CARGO[@]}" build --all-features
-"${CARGO[@]}" test --all-features --verbose
+"${CARGO[@]}" test --all-features --verbose -- --test-threads=1
 echo "OK: checks passed ($(basename "$PWD"))"
