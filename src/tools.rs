@@ -139,6 +139,12 @@ impl ToolContext {
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
+
+            // HITL: wait if paused
+            while self.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
             Ok((session, puppet, self.intervention_handler.clone()))
         }
     }
