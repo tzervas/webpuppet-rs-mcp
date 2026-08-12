@@ -19,6 +19,9 @@ else
   "${CARGO[@]}" fmt --check
 fi
 "${CARGO[@]}" clippy --all-targets --all-features -- -D warnings
+# Pre-compile the release binary to prevent parallel compiler execution/lock contention
+"${CARGO[@]}" build --bin webpuppet-mcp --release
 "${CARGO[@]}" build --all-features
-"${CARGO[@]}" test --all-features --verbose
+# Run the test suite sequentially to prevent parallel compilation issues during integration tests
+"${CARGO[@]}" test --all-features --verbose -- --test-threads=1
 echo "OK: checks passed ($(basename "$PWD"))"
