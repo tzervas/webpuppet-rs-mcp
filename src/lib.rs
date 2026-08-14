@@ -17,6 +17,9 @@
 //!
 //! ## Available Tools
 //!
+//! - `webpuppet_session_open`: Create a persistent browser session for a specific provider
+//! - `webpuppet_session_close`: Destroy a persistent session and close its browser window
+//! - `webpuppet_extract`: Extract text/CSS content from the active session browser page using a selector
 //! - `webpuppet_prompt`: Send prompts to AI providers (Claude, Grok, Gemini, ChatGPT, Perplexity, NotebookLM, Kaggle)
 //! - `webpuppet_screenshot`: Take screenshots of web pages
 //! - `webpuppet_navigate`: Navigate browser to a specific URL

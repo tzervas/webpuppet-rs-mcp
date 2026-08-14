@@ -167,6 +167,21 @@ impl ToolContext {
     }
 }
 
+/// Validates that a URL string is non-empty and uses an http or https scheme.
+fn validate_url(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(Error::InvalidParams("URL cannot be empty".into()));
+    }
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        return Err(Error::InvalidParams(format!(
+            "Invalid URL scheme: '{}'. URL must start with http:// or https://",
+            url
+        )));
+    }
+    Ok(())
+}
+
 /// Registry of available tools.
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
@@ -997,6 +1012,8 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            validate_url(&target_url)?;
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
@@ -1448,6 +1465,13 @@ impl Tool for NavigateTool {
         // Parse arguments
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        validate_url(&args.url)?;
+
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))

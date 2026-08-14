@@ -568,6 +568,123 @@ async fn test_tool_call_check_permission() {
 }
 
 #[tokio::test]
+async fn test_tool_call_list_providers() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // List providers
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 20,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_list_providers",
+            "arguments": {}
+        })),
+    };
+
+    match client.send_request(request).await {
+        Ok(response) => {
+            assert!(response.error.is_none());
+            if let Some(result) = response.result {
+                let text = result
+                    .get("content")
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|c| c.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+
+                println!("List providers output: {}", text);
+                assert!(text.contains("Available Providers"));
+                assert!(text.contains("claude"));
+                assert!(text.contains("grok"));
+            }
+        }
+        Err(e) => eprintln!("List providers call failed: {}", e),
+    }
+
+    client.close().await;
+}
+
+#[tokio::test]
+async fn test_tool_call_provider_capabilities() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Provider capabilities for grok
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 21,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_provider_capabilities",
+            "arguments": {
+                "provider": "grok"
+            }
+        })),
+    };
+
+    match client.send_request(request).await {
+        Ok(response) => {
+            assert!(response.error.is_none());
+            if let Some(result) = response.result {
+                let text = result
+                    .get("content")
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|c| c.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+
+                println!("Provider capabilities output: {}", text);
+                assert!(text.contains("capabilities"));
+                assert!(text.contains("Grok"));
+            }
+        }
+        Err(e) => eprintln!("Provider capabilities call failed: {}", e),
+    }
+
+    client.close().await;
+}
+
+#[tokio::test]
 async fn test_intervention_status() {
     let mut client = match McpTestClient::spawn().await {
         Ok(c) => c,
