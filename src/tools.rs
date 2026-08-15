@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use webpuppet::{
     BrowserDetector, InterventionHandler, InterventionState, Operation, PermissionGuard,
@@ -44,12 +44,26 @@ pub struct ActiveSession {
     pub intervention_handler: Arc<RwLock<InterventionHandler>>,
 }
 
+/// Helper function to validate target URL format and scheme.
+fn validate_url(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || (!trimmed.starts_with("http://") && !trimmed.starts_with("https://")) {
+        return Err(Error::InvalidParams(format!(
+            "invalid URL scheme: '{}'. URL must start with 'http://' or 'https://'",
+            url
+        )));
+    }
+    Ok(())
+}
+
 /// Context passed to tools during execution.
 pub struct ToolContext {
     /// Active persistent sessions map, keyed by session ID.
     pub sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
     /// WebPuppet instance (lazy-initialized fallback).
     pub puppet: Arc<RwLock<Option<Arc<WebPuppet>>>>,
+    /// Mutex serializing lazy puppet initialization.
+    pub init_lock: Arc<Mutex<()>>,
     /// Permission guard.
     pub permissions: Arc<PermissionGuard>,
     /// Screening configuration.
@@ -66,6 +80,7 @@ impl ToolContext {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             puppet: Arc::new(RwLock::new(None)),
+            init_lock: Arc::new(Mutex::new(())),
             permissions: Arc::new(permissions),
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
@@ -78,6 +93,7 @@ impl ToolContext {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             puppet: Arc::new(RwLock::new(None)),
+            init_lock: Arc::new(Mutex::new(())),
             permissions: Arc::new(permissions),
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
@@ -87,6 +103,7 @@ impl ToolContext {
 
     /// Get or create the fallback WebPuppet instance.
     pub async fn get_puppet(&self) -> Result<Arc<WebPuppet>> {
+        // Lock-free fast path check
         {
             let guard = self.puppet.read().await;
             if let Some(ref puppet) = *guard {
@@ -94,7 +111,17 @@ impl ToolContext {
             }
         }
 
-        // Build outside the lock to prevent holding write lock across slow browser launch
+        // Serialize initialization across concurrent callers
+        let _init_guard = self.init_lock.lock().await;
+
+        // Double check after acquiring initialization lock
+        {
+            let guard = self.puppet.read().await;
+            if let Some(ref puppet) = *guard {
+                return Ok(puppet.clone());
+            }
+        }
+
         let puppet = WebPuppet::builder()
             .with_all_providers()
             .headless(self.headless)
@@ -103,24 +130,18 @@ impl ToolContext {
             .await?;
         let puppet_arc = Arc::new(puppet);
 
-        let mut guard = self.puppet.write().await;
-        if let Some(ref existing) = *guard {
-            // Concurrently initialized by another thread
-            Ok(existing.clone())
-        } else {
-            *guard = Some(puppet_arc.clone());
-            Ok(puppet_arc)
-        }
+        *self.puppet.write().await = Some(puppet_arc.clone());
+        Ok(puppet_arc)
     }
 
     /// Unified helper to resolve either a persistent active session or a fallback/ephemeral session.
-    /// Safely handles the HITL loop inside persistent sessions.
+    /// Safely handles the HITL loop for both active persistent and fallback sessions.
     pub async fn get_active_or_fallback(
         &self,
         session_id: Option<&str>,
         provider: Option<Provider>,
     ) -> Result<(Session, Arc<WebPuppet>, Arc<RwLock<InterventionHandler>>)> {
-        if let Some(sid) = session_id {
+        let (session, puppet, intervention_handler) = if let Some(sid) = session_id {
             let active = {
                 let sessions = self.sessions.read().await;
                 sessions
@@ -128,33 +149,39 @@ impl ToolContext {
                     .cloned()
                     .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?
             };
-
-            // HITL: wait if paused
-            while active.intervention_handler.read().await.is_waiting() {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-
-            Ok((active.session, active.puppet, active.intervention_handler))
+            (active.session, active.puppet, active.intervention_handler)
         } else {
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
-            Ok((session, puppet, self.intervention_handler.clone()))
+            (session, puppet, self.intervention_handler.clone())
+        };
+
+        // HITL: wait if paused
+        while intervention_handler.read().await.is_waiting() {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
+
+        Ok((session, puppet, intervention_handler))
     }
 
     /// Close all active sessions and the fallback puppet browser.
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
-        let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
+        // 1. Drain and close active sessions concurrently
+        let active_sessions = {
+            let mut sessions_guard = self.sessions.write().await;
+            sessions_guard.drain().collect::<Vec<_>>()
+        };
+
+        let close_futures = active_sessions.into_iter().map(|(sid, active)| async move {
             tracing::info!("Closing session: {}", sid);
             if let Err(e) = active.puppet.close().await {
                 tracing::warn!("Error closing puppet for session {}: {}", sid, e);
             }
-        }
+        });
+        futures::future::join_all(close_futures).await;
 
         // 2. Close fallback puppet if initialized
         let mut puppet_guard = self.puppet.write().await;
@@ -997,6 +1024,8 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            validate_url(&target_url)?;
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
@@ -1439,15 +1468,22 @@ impl Tool for NavigateTool {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
+        // Parse arguments
+        let args: NavigateArgs =
+            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        validate_url(&args.url)?;
+
         // Check permission
         context
             .permissions
             .require(Operation::Navigate)
             .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
-        // Parse arguments
-        let args: NavigateArgs =
-            serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
