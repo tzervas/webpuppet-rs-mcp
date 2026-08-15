@@ -162,6 +162,59 @@ async fn test_initialize_handshake() {
     client.close().await;
 }
 
+#[tokio::test]
+async fn test_invalid_url_scheme_error() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Navigate with invalid URL scheme
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 101,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "url": "file:///etc/passwd"
+            }
+        })),
+    };
+
+    match client.send_request(request).await {
+        Ok(response) => {
+            let error = response
+                .error
+                .expect("Should return JSON-RPC error for invalid URL scheme");
+            assert!(
+                error.message.contains("invalid URL scheme"),
+                "Expected invalid URL scheme error message, got: {}",
+                error.message
+            );
+        }
+        Err(e) => eprintln!("Request failed: {}", e),
+    }
+
+    client.close().await;
+}
+
 // ============================================================================
 // Persistent Session Tests
 // ============================================================================
