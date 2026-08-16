@@ -997,6 +997,18 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            if target_url.trim().is_empty() {
+                return Err(Error::InvalidParams("URL cannot be empty".into()));
+            }
+
+            let lower_url = target_url.to_lowercase();
+            if !lower_url.starts_with("http://") && !lower_url.starts_with("https://") {
+                return Err(Error::InvalidParams(format!(
+                    "Invalid URL scheme in '{}'. URL must start with http:// or https://",
+                    target_url
+                )));
+            }
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
@@ -1439,15 +1451,27 @@ impl Tool for NavigateTool {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        // Check permission
-        context
-            .permissions
-            .require(Operation::Navigate)
-            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
-
         // Parse arguments
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        if args.url.trim().is_empty() {
+            return Err(Error::InvalidParams("URL cannot be empty".into()));
+        }
+
+        let lower_url = args.url.to_lowercase();
+        if !lower_url.starts_with("http://") && !lower_url.starts_with("https://") {
+            return Err(Error::InvalidParams(format!(
+                "Invalid URL scheme in '{}'. URL must start with http:// or https://",
+                args.url
+            )));
+        }
+
+        // Check permission against the target URL
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))

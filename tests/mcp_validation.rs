@@ -162,6 +162,68 @@ async fn test_initialize_handshake() {
     client.close().await;
 }
 
+#[tokio::test]
+async fn test_navigate_url_validation() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Test 1: Empty URL
+    let empty_url_req = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 20,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "url": ""
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(empty_url_req).await {
+        let err = response.error.expect("Empty URL should fail");
+        assert!(err.message.contains("URL cannot be empty"));
+    }
+
+    // Test 2: Invalid scheme (ftp://)
+    let invalid_scheme_req = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 21,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "url": "ftp://example.com/file"
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(invalid_scheme_req).await {
+        let err = response.error.expect("Invalid scheme should fail");
+        assert!(err.message.contains("Invalid URL scheme"));
+    }
+
+    client.close().await;
+}
+
 // ============================================================================
 // Persistent Session Tests
 // ============================================================================
