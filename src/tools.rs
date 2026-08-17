@@ -961,6 +961,17 @@ impl Tool for ScreenshotTool {
         let args: ScreenshotArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
+        if let Some(ref url) = args.url {
+            let trimmed = url.trim();
+            if trimmed.is_empty()
+                || (!trimmed.starts_with("http://") && !trimmed.starts_with("https://"))
+            {
+                return Err(Error::InvalidParams(
+                    "URL must not be empty and must start with http:// or https://".to_string(),
+                ));
+            }
+        }
+
         let path_ref = args.path.as_deref().map(std::path::Path::new);
 
         if let Some(ref sid) = args.session_id {
@@ -1259,7 +1270,7 @@ impl Tool for InterventionCompleteTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.complete(args.success, args.message.clone());
 
         let status = if args.success {
@@ -1327,7 +1338,7 @@ impl Tool for InterventionPauseTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.pause();
 
         Ok(ToolCallResult {
@@ -1386,7 +1397,7 @@ impl Tool for InterventionResumeTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.resume();
 
         Ok(ToolCallResult {
@@ -1448,6 +1459,20 @@ impl Tool for NavigateTool {
         // Parse arguments
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        let trimmed_url = args.url.trim();
+        if trimmed_url.is_empty()
+            || (!trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://"))
+        {
+            return Err(Error::InvalidParams(
+                "URL must not be empty and must start with http:// or https://".to_string(),
+            ));
+        }
+
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))

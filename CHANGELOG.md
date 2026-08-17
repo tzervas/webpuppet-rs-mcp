@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed write-lock acquisition for `InterventionHandler` in intervention tools (`webpuppet_intervention_complete`, `webpuppet_pause`, `webpuppet_resume`).
+
+### Security
+- Enforced target URL scheme validation (`http://` or `https://`) and domain policy check via `require_with_url` in `webpuppet_navigate` and `webpuppet_screenshot`.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed
