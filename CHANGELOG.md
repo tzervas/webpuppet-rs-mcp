@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Enhanced `webpuppet_browser_status` to accept an optional `session_id` parameter and report detailed persistent session state.
+
+### Changed
+- Improved URL scheme validation for `webpuppet_navigate` and `webpuppet_screenshot` to reject empty or non-HTTP(S) URLs.
+- Converted intervention tool operations (`pause`, `resume`, `complete`) to use write-locking on `InterventionHandler` for thread safety.
+- Concurrent persistent session cleanup during MCP server shutdown via `futures::future::join_all`.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed

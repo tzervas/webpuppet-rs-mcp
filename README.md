@@ -19,10 +19,10 @@ This crate provides a standards-compliant MCP server that exposes webpuppet func
 |------|-------------|
 | `webpuppet_session_open` | Create a persistent browser session for a specific provider |
 | `webpuppet_session_close` | Destroy a persistent session and close its browser window |
-| `webpuppet_navigate` | Navigate browser to a specific URL |
-| `webpuppet_screenshot` | Take a screenshot of a web page |
-| `webpuppet_extract` | Extract text/CSS content from the active session browser page using a selector |
-| `webpuppet_prompt` | Send a prompt through browser automation (AI providers + select web tools) |
+| `webpuppet_navigate` | Navigate browser to a specific URL (supports optional `session_id`) |
+| `webpuppet_screenshot` | Take a screenshot of a web page (supports optional `session_id`) |
+| `webpuppet_extract` | Extract text/CSS content from an active browser session using a selector |
+| `webpuppet_prompt` | Send a prompt through browser automation (supports optional `session_id`) |
 | `webpuppet_list_providers` | List available AI providers and their status |
 | `webpuppet_provider_capabilities` | Get declared capabilities for a provider/tool |
 | `webpuppet_detect_browsers` | Detect installed browsers that can be used for automation |
@@ -31,7 +31,7 @@ This crate provides a standards-compliant MCP server that exposes webpuppet func
 | `webpuppet_intervention_complete` | Signal completion of manual intervention |
 | `webpuppet_pause` | Pause automation for manual interaction |
 | `webpuppet_resume` | Resume automation after pause |
-| `webpuppet_browser_status` | Get current browser status including URL, title, and visibility |
+| `webpuppet_browser_status` | Get current browser status (supports optional `session_id`) |
 
 ## Installation
 
