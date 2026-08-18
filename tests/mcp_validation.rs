@@ -162,6 +162,149 @@ async fn test_initialize_handshake() {
     client.close().await;
 }
 
+#[tokio::test]
+async fn test_invalid_url_scheme() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Call navigate with invalid scheme
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 200,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "url": "file:///etc/passwd"
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(request).await {
+        assert!(response.error.is_some(), "Should reject non-http(s) scheme");
+        if let Some(err) = response.error {
+            assert!(err.message.contains("invalid URL scheme"));
+        }
+    }
+
+    client.close().await;
+}
+
+#[tokio::test]
+async fn test_browser_status_with_session_id() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Open session
+    let open_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 201,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_open",
+            "arguments": {
+                "provider": "claude"
+            }
+        })),
+    };
+
+    let mut session_id = String::new();
+    if let Ok(response) = client.send_request(open_request).await {
+        if let Some(result) = response.result {
+            if let Some(meta_sid) = result
+                .get("_meta")
+                .and_then(|m| m.get("session_id"))
+                .and_then(|s| s.as_str())
+            {
+                session_id = meta_sid.to_string();
+            }
+        }
+    }
+
+    assert!(!session_id.is_empty(), "Session ID must be created");
+
+    // Check status for session_id
+    let status_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 202,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_browser_status",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(status_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+
+            assert!(text.contains("Browser Status (Session"));
+            assert!(text.contains("Claude"));
+        }
+    }
+
+    // Close session
+    let close_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 203,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_close",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+    let _ = client.send_request(close_request).await;
+
+    client.close().await;
+}
+
 // ============================================================================
 // Persistent Session Tests
 // ============================================================================
