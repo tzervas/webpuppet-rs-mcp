@@ -58,6 +58,8 @@ pub struct ToolContext {
     pub intervention_handler: Arc<RwLock<InterventionHandler>>,
     /// Whether to run browser in headless mode (default: true).
     pub headless: bool,
+    /// Dedicated initialization lock to serialize lazy puppet initialization.
+    init_mutex: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl ToolContext {
@@ -70,6 +72,7 @@ impl ToolContext {
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
             headless: true,
+            init_mutex: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -82,6 +85,7 @@ impl ToolContext {
             screening_config: ScreeningConfig::default(),
             intervention_handler: Arc::new(RwLock::new(InterventionHandler::new())),
             headless: false,
+            init_mutex: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -94,7 +98,14 @@ impl ToolContext {
             }
         }
 
-        // Build outside the lock to prevent holding write lock across slow browser launch
+        let _init_guard = self.init_mutex.lock().await;
+        {
+            let guard = self.puppet.read().await;
+            if let Some(ref puppet) = *guard {
+                return Ok(puppet.clone());
+            }
+        }
+
         let puppet = WebPuppet::builder()
             .with_all_providers()
             .headless(self.headless)
@@ -104,13 +115,8 @@ impl ToolContext {
         let puppet_arc = Arc::new(puppet);
 
         let mut guard = self.puppet.write().await;
-        if let Some(ref existing) = *guard {
-            // Concurrently initialized by another thread
-            Ok(existing.clone())
-        } else {
-            *guard = Some(puppet_arc.clone());
-            Ok(puppet_arc)
-        }
+        *guard = Some(puppet_arc.clone());
+        Ok(puppet_arc)
     }
 
     /// Unified helper to resolve either a persistent active session or a fallback/ephemeral session.
@@ -139,6 +145,12 @@ impl ToolContext {
             let puppet = self.get_puppet().await?;
             let target_provider = provider.unwrap_or(Provider::Grok);
             let session = puppet.get_session(target_provider).await?;
+
+            // HITL: wait if paused
+            while self.intervention_handler.read().await.is_waiting() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
             Ok((session, puppet, self.intervention_handler.clone()))
         }
     }
@@ -147,14 +159,26 @@ impl ToolContext {
     pub async fn shutdown(&self) {
         tracing::info!("Closing all active sessions and browsers...");
 
-        // 1. Close and remove all active sessions
-        let mut sessions_guard = self.sessions.write().await;
-        for (sid, active) in sessions_guard.drain() {
-            tracing::info!("Closing session: {}", sid);
+        // 1. Drain and close all active sessions concurrently
+        let active_sessions = {
+            let mut sessions_guard = self.sessions.write().await;
+            sessions_guard
+                .drain()
+                .map(|(_, active)| active)
+                .collect::<Vec<_>>()
+        };
+
+        let close_futures = active_sessions.into_iter().map(|active| async move {
+            tracing::info!("Closing session: {}", active.session_id);
             if let Err(e) = active.puppet.close().await {
-                tracing::warn!("Error closing puppet for session {}: {}", sid, e);
+                tracing::warn!(
+                    "Error closing puppet for session {}: {}",
+                    active.session_id,
+                    e
+                );
             }
-        }
+        });
+        futures::future::join_all(close_futures).await;
 
         // 2. Close fallback puppet if initialized
         let mut puppet_guard = self.puppet.write().await;
@@ -997,6 +1021,14 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            if target_url.trim().is_empty()
+                || (!target_url.starts_with("http://") && !target_url.starts_with("https://"))
+            {
+                return Err(Error::InvalidParams(
+                    "URL must start with http:// or https://".to_string(),
+                ));
+            }
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
@@ -1259,7 +1291,7 @@ impl Tool for InterventionCompleteTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let handler_guard = handler.write().await;
         handler_guard.complete(args.success, args.message.clone());
 
         let status = if args.success {
@@ -1327,7 +1359,7 @@ impl Tool for InterventionPauseTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let handler_guard = handler.write().await;
         handler_guard.pause();
 
         Ok(ToolCallResult {
@@ -1386,7 +1418,7 @@ impl Tool for InterventionResumeTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let handler_guard = handler.write().await;
         handler_guard.resume();
 
         Ok(ToolCallResult {
@@ -1439,15 +1471,23 @@ impl Tool for NavigateTool {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        // Check permission
-        context
-            .permissions
-            .require(Operation::Navigate)
-            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
-
         // Parse arguments
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
+
+        if args.url.trim().is_empty()
+            || (!args.url.starts_with("http://") && !args.url.starts_with("https://"))
+        {
+            return Err(Error::InvalidParams(
+                "URL must start with http:// or https://".to_string(),
+            ));
+        }
+
+        // Check permission with URL
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, &args.url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
@@ -1479,6 +1519,12 @@ impl Tool for NavigateTool {
 /// Tool for getting browser status.
 pub struct BrowserStatusTool;
 
+#[derive(Debug, Deserialize)]
+struct BrowserStatusArgs {
+    /// Optional active session ID.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for BrowserStatusTool {
     fn definition(&self) -> ToolDefinition {
@@ -1487,7 +1533,12 @@ impl Tool for BrowserStatusTool {
             description: "Get current browser status including URL, title, and visibility.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID to query specifically."
+                    }
+                },
                 "required": []
             }),
         }
@@ -1495,36 +1546,77 @@ impl Tool for BrowserStatusTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let guard = context.puppet.read().await;
+        let args: BrowserStatusArgs =
+            serde_json::from_value(arguments).unwrap_or(BrowserStatusArgs { session_id: None });
 
-        if guard.is_none() {
-            return Ok(ToolCallResult {
-                content: vec![ContentItem::text(
-                    "# Browser Status\n\n⚪ No fallback browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
-                )],
+        if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+
+            let current_url = active
+                .session
+                .current_url()
+                .await
+                .unwrap_or_else(|_| "Unknown".into());
+            let title = active
+                .session
+                .get_title()
+                .await
+                .unwrap_or_else(|_| "Unknown".into());
+
+            let text = format!(
+                "# Persistent Session Status\n\n🟢 Session `{}` is active.\n\n- **Provider**: `{:?}`\n- **Current URL**: {}\n- **Title**: {}",
+                sid, active.provider, current_url, title
+            );
+
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(text)],
+                is_error: false,
+                meta: Some(json!({ "session_id": sid })),
+            })
+        } else {
+            let sessions = context.sessions.read().await;
+            let fallback_guard = context.puppet.read().await;
+
+            let mut lines = Vec::new();
+            lines.push("# Browser Status".to_string());
+            lines.push(format!(
+                "- **Mode**: {}",
+                if context.headless {
+                    "Headless"
+                } else {
+                    "Visible"
+                }
+            ));
+            lines.push(format!(
+                "- **Active Persistent Sessions**: {}",
+                sessions.len()
+            ));
+
+            if !sessions.is_empty() {
+                lines.push("\n## Persistent Sessions".to_string());
+                for (sid, active) in sessions.iter() {
+                    lines.push(format!("- `{}` (Provider: `{:?}`)", sid, active.provider));
+                }
+            }
+
+            if fallback_guard.is_some() {
+                lines.push("\n🟢 Fallback browser session is active.".to_string());
+            } else {
+                lines.push("\n⚪ No fallback browser session is currently active.".to_string());
+            }
+
+            Ok(ToolCallResult {
+                content: vec![ContentItem::text(lines.join("\n"))],
                 is_error: false,
                 meta: None,
-            });
+            })
         }
-
-        // Return basic status
-        let visibility = if context.headless {
-            "Headless"
-        } else {
-            "Visible"
-        };
-
-        Ok(ToolCallResult {
-            content: vec![ContentItem::text(format!(
-                "# Browser Status\n\n🟢 Browser session is active.\n\n- **Mode**: {}\n- **Providers**: Grok, Claude, Gemini",
-                visibility
-            ))],
-            is_error: false,
-            meta: None,
-        })
     }
 }
 
