@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added optional `session_id` filter and status reporting to `webpuppet_browser_status`.
+
+### Security
+- Enforced URL scheme validation (`http://` / `https://`) in `webpuppet_navigate` and `webpuppet_screenshot`.
+- Enforced domain-specific permission checks via `require_with_url` in `webpuppet_navigate`.
+
+### Reliability & Performance
+- Serialized fallback `WebPuppet` lazy initialization using an async mutex to prevent concurrent browser launches.
+- Concurrent active session cleanup during server shutdown using `futures::future::join_all`.
+- Guaranteed server cleanup execution in stdio transport loop to prevent background process leaks.
+- Acquired write locks on intervention handler state mutations.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed
