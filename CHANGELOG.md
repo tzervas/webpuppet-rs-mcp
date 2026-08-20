@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional `session_id` argument to `webpuppet_browser_status` for inspecting specific persistent sessions and active session listing.
+
+### Improved
+- Enforced non-empty `http://` or `https://` URL scheme validation in `webpuppet_navigate` and `webpuppet_screenshot`.
+- Updated documentation across `README.md`, crate root `src/lib.rs`, and roadmap artifacts.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed

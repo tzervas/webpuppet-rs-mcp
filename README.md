@@ -31,7 +31,7 @@ This crate provides a standards-compliant MCP server that exposes webpuppet func
 | `webpuppet_intervention_complete` | Signal completion of manual intervention |
 | `webpuppet_pause` | Pause automation for manual interaction |
 | `webpuppet_resume` | Resume automation after pause |
-| `webpuppet_browser_status` | Get current browser status including URL, title, and visibility |
+| `webpuppet_browser_status` | Get current browser status including URL, title, and active persistent sessions |
 
 ## Installation
 
