@@ -17,18 +17,21 @@
 //!
 //! ## Available Tools
 //!
+//! - `webpuppet_session_open`: Create a persistent browser session for a specific provider
+//! - `webpuppet_session_close`: Destroy a persistent session and close its browser window
+//! - `webpuppet_navigate`: Navigate browser to a specific URL (validates URL scheme)
+//! - `webpuppet_screenshot`: Take a screenshot of a web page
+//! - `webpuppet_extract`: Extract text/CSS content from the active session browser page using a selector
 //! - `webpuppet_prompt`: Send prompts to AI providers (Claude, Grok, Gemini, ChatGPT, Perplexity, NotebookLM, Kaggle)
-//! - `webpuppet_screenshot`: Take screenshots of web pages
-//! - `webpuppet_navigate`: Navigate browser to a specific URL
-//! - `webpuppet_browser_status`: Get current browser session status and page info
-//! - `webpuppet_list_providers`: List available AI providers
-//! - `webpuppet_provider_capabilities`: Get capabilities for a specific provider
-//! - `webpuppet_detect_browsers`: Detect installed browsers (Brave, Chrome, Chromium, Edge, Opera, Vivaldi, Firefox, Safari)
+//! - `webpuppet_list_providers`: List available AI providers and their status
+//! - `webpuppet_provider_capabilities`: Get declared capabilities for a provider/tool
+//! - `webpuppet_detect_browsers`: Detect installed browsers for automation
 //! - `webpuppet_check_permission`: Check if an operation is allowed by permission policy
-//! - `webpuppet_intervention_status`: Check if human intervention is needed
+//! - `webpuppet_intervention_status`: Check if human intervention is needed (captcha, 2FA, etc.)
 //! - `webpuppet_intervention_complete`: Signal completion of manual intervention
 //! - `webpuppet_pause`: Pause automation for manual interaction
 //! - `webpuppet_resume`: Resume automation after pause
+//! - `webpuppet_browser_status`: Get current browser status, active persistent sessions, or session details
 //!
 //! ## Usage with VS Code
 //!

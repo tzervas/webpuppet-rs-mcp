@@ -997,10 +997,19 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            let trimmed_url = target_url.trim();
+            if trimmed_url.is_empty()
+                || (!trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://"))
+            {
+                return Err(Error::InvalidParams(
+                    "URL must be non-empty and start with 'http://' or 'https://'".into(),
+                ));
+            }
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
-                .require_with_url(Operation::Navigate, &target_url)
+                .require_with_url(Operation::Navigate, trimmed_url)
                 .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
             let (session, _puppet, _handler) = context
@@ -1449,11 +1458,20 @@ impl Tool for NavigateTool {
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
+        let trimmed_url = args.url.trim();
+        if trimmed_url.is_empty()
+            || (!trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://"))
+        {
+            return Err(Error::InvalidParams(
+                "URL must be non-empty and start with 'http://' or 'https://'".into(),
+            ));
+        }
+
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
             .await?;
 
-        session.navigate(&args.url).await?;
+        session.navigate(trimmed_url).await?;
 
         // Get current URL and title
         let current_url = session
@@ -1479,15 +1497,28 @@ impl Tool for NavigateTool {
 /// Tool for getting browser status.
 pub struct BrowserStatusTool;
 
+#[derive(Debug, Deserialize)]
+struct BrowserStatusArgs {
+    /// Optional session ID to query specifically.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for BrowserStatusTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "webpuppet_browser_status".into(),
-            description: "Get current browser status including URL, title, and visibility.".into(),
+            description:
+                "Get current browser status including URL, title, and active persistent sessions."
+                    .into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active session ID to query details for"
+                    }
+                },
                 "required": []
             }),
         }
@@ -1495,33 +1526,70 @@ impl Tool for BrowserStatusTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let guard = context.puppet.read().await;
+        let args: BrowserStatusArgs =
+            serde_json::from_value(arguments).unwrap_or(BrowserStatusArgs { session_id: None });
 
-        if guard.is_none() {
+        if let Some(ref sid) = args.session_id {
+            let sessions = context.sessions.read().await;
+            let active = sessions
+                .get(sid)
+                .ok_or_else(|| Error::InvalidParams(format!("session not found: {}", sid)))?;
+
+            let url = active.session.current_url().await.unwrap_or_default();
+            let title = active.session.get_title().await.unwrap_or_default();
+            let state = active.intervention_handler.read().await.state();
+
             return Ok(ToolCallResult {
-                content: vec![ContentItem::text(
-                    "# Browser Status\n\n⚪ No fallback browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
-                )],
+                content: vec![ContentItem::text(format!(
+                    "# Session Status: `{}`\n\n- **Provider**: `{}`\n- **Current URL**: {}\n- **Title**: {}\n- **HITL State**: {:?}",
+                    sid, active.provider, url, title, state
+                ))],
                 is_error: false,
                 meta: None,
             });
         }
 
-        // Return basic status
-        let visibility = if context.headless {
+        let mode = if context.headless {
             "Headless"
         } else {
             "Visible"
         };
+        let guard = context.puppet.read().await;
+        let fallback_active = guard.is_some();
+
+        let sessions = context.sessions.read().await;
+        let session_count = sessions.len();
+
+        let mut status_lines = vec![
+            "# Browser Status".to_string(),
+            format!("- **Mode**: {}", mode),
+            format!(
+                "- **Fallback Puppet**: {}",
+                if fallback_active {
+                    "🟢 Active"
+                } else {
+                    "⚪ Inactive"
+                }
+            ),
+            format!("- **Active Persistent Sessions**: {}", session_count),
+        ];
+
+        if !sessions.is_empty() {
+            status_lines.push("\n### Persistent Sessions:".into());
+            for (sid, active) in sessions.iter() {
+                let url = active.session.current_url().await.unwrap_or_default();
+                status_lines.push(format!(
+                    "- `{}`: Provider `{}`, URL: {}",
+                    sid, active.provider, url
+                ));
+            }
+        }
 
         Ok(ToolCallResult {
-            content: vec![ContentItem::text(format!(
-                "# Browser Status\n\n🟢 Browser session is active.\n\n- **Mode**: {}\n- **Providers**: Grok, Claude, Gemini",
-                visibility
-            ))],
+            content: vec![ContentItem::text(status_lines.join("\n"))],
             is_error: false,
             meta: None,
         })
