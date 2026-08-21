@@ -17,10 +17,12 @@
 //!
 //! ## Available Tools
 //!
-//! - `webpuppet_prompt`: Send prompts to AI providers (Claude, Grok, Gemini, ChatGPT, Perplexity, NotebookLM, Kaggle)
-//! - `webpuppet_screenshot`: Take screenshots of web pages
+//! - `webpuppet_session_open`: Create a persistent browser session for a specific provider
+//! - `webpuppet_session_close`: Destroy a persistent session and close its browser window
 //! - `webpuppet_navigate`: Navigate browser to a specific URL
-//! - `webpuppet_browser_status`: Get current browser session status and page info
+//! - `webpuppet_screenshot`: Take screenshots of web pages
+//! - `webpuppet_extract`: Extract text/CSS content from the active session browser page using a selector
+//! - `webpuppet_prompt`: Send prompts to AI providers (Claude, Grok, Gemini, ChatGPT, Perplexity, NotebookLM, Kaggle)
 //! - `webpuppet_list_providers`: List available AI providers
 //! - `webpuppet_provider_capabilities`: Get capabilities for a specific provider
 //! - `webpuppet_detect_browsers`: Detect installed browsers (Brave, Chrome, Chromium, Edge, Opera, Vivaldi, Firefox, Safari)
@@ -29,6 +31,7 @@
 //! - `webpuppet_intervention_complete`: Signal completion of manual intervention
 //! - `webpuppet_pause`: Pause automation for manual interaction
 //! - `webpuppet_resume`: Resume automation after pause
+//! - `webpuppet_browser_status`: Get current browser session status and page info
 //!
 //! ## Usage with VS Code
 //!

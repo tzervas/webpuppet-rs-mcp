@@ -11,12 +11,12 @@ Companion: [ASSESSMENT.md](ASSESSMENT.md).
 
 ### Wave A — Tool honesty
 
-| ID | Work |
-|----|------|
-| M-A1 | Audit each tool: implement or remove from manifest |
-| M-A2 | Screenshot real path or delete |
-| M-A3 | HITL: intervention_* actually pause prompt pipeline |
-| M-A4 | Session object persists across tools until `close` |
+| ID | Work | Status |
+|----|------|--------|
+| M-A1 | Audit each tool: implement or remove from manifest | Done |
+| M-A2 | Screenshot real path or delete | Done |
+| M-A3 | HITL: intervention_* actually pause prompt pipeline | Done |
+| M-A4 | Session object persists across tools until `close` | Done |
 
 ### Wave B — Safety
 
