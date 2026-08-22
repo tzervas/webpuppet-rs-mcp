@@ -997,10 +997,19 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            let trimmed_url = target_url.trim();
+            if trimmed_url.is_empty()
+                || (!trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://"))
+            {
+                return Err(Error::InvalidParams(
+                    "URL must be non-empty and start with 'http://' or 'https://'".into(),
+                ));
+            }
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
-                .require_with_url(Operation::Navigate, &target_url)
+                .require_with_url(Operation::Navigate, trimmed_url)
                 .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
             let (session, _puppet, _handler) = context
@@ -1449,17 +1458,31 @@ impl Tool for NavigateTool {
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
+        let trimmed_url = args.url.trim();
+        if trimmed_url.is_empty()
+            || (!trimmed_url.starts_with("http://") && !trimmed_url.starts_with("https://"))
+        {
+            return Err(Error::InvalidParams(
+                "URL must be non-empty and start with 'http://' or 'https://'".into(),
+            ));
+        }
+
+        context
+            .permissions
+            .require_with_url(Operation::Navigate, trimmed_url)
+            .map_err(|e| Error::PermissionDenied(e.to_string()))?;
+
         let (session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
             .await?;
 
-        session.navigate(&args.url).await?;
+        session.navigate(trimmed_url).await?;
 
         // Get current URL and title
         let current_url = session
             .current_url()
             .await
-            .unwrap_or_else(|_| args.url.clone());
+            .unwrap_or_else(|_| trimmed_url.to_string());
         let title = session
             .get_title()
             .await
@@ -1479,6 +1502,12 @@ impl Tool for NavigateTool {
 /// Tool for getting browser status.
 pub struct BrowserStatusTool;
 
+#[derive(Debug, Deserialize)]
+struct BrowserStatusArgs {
+    /// Optional session ID to query specific session.
+    session_id: Option<String>,
+}
+
 #[async_trait::async_trait]
 impl Tool for BrowserStatusTool {
     fn definition(&self) -> ToolDefinition {
@@ -1487,7 +1516,12 @@ impl Tool for BrowserStatusTool {
             description: "Get current browser status including URL, title, and visibility.".into(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional active persistent session ID to inspect."
+                    }
+                },
                 "required": []
             }),
         }
@@ -1495,33 +1529,53 @@ impl Tool for BrowserStatusTool {
 
     async fn execute(
         &self,
-        _arguments: serde_json::Value,
+        arguments: serde_json::Value,
         context: &ToolContext,
     ) -> Result<ToolCallResult> {
-        let guard = context.puppet.read().await;
+        let args: BrowserStatusArgs =
+            serde_json::from_value(arguments).unwrap_or(BrowserStatusArgs { session_id: None });
 
-        if guard.is_none() {
-            return Ok(ToolCallResult {
-                content: vec![ContentItem::text(
-                    "# Browser Status\n\n⚪ No fallback browser session is currently active.\n\nA browser will be launched when you use `webpuppet_navigate` or `webpuppet_prompt`."
-                )],
-                is_error: false,
-                meta: None,
-            });
-        }
-
-        // Return basic status
         let visibility = if context.headless {
             "Headless"
         } else {
             "Visible"
         };
 
+        if let Some(ref sid) = args.session_id {
+            let (session, _puppet, _handler) =
+                context.get_active_or_fallback(Some(sid), None).await?;
+
+            let current_url = session.current_url().await.unwrap_or_default();
+            let title = session
+                .get_title()
+                .await
+                .unwrap_or_else(|_| "Unknown".into());
+
+            return Ok(ToolCallResult {
+                content: vec![ContentItem::text(format!(
+                    "# Persistent Session Status\n\n🟢 Active session: `{}`\n\n- **Mode**: {}\n- **Current URL**: {}\n- **Title**: {}",
+                    sid, visibility, current_url, title
+                ))],
+                is_error: false,
+                meta: None,
+            });
+        }
+
+        let sessions = context.sessions.read().await;
+        let active_count = sessions.len();
+        let fallback_active = context.puppet.read().await.is_some();
+
+        let text = if active_count > 0 || fallback_active {
+            format!(
+                "# Browser Status\n\n🟢 Browser system active.\n\n- **Mode**: {}\n- **Active Persistent Sessions**: {}\n- **Fallback Browser Active**: {}",
+                visibility, active_count, fallback_active
+            )
+        } else {
+            "# Browser Status\n\n⚪ No active browser sessions or fallback browsers.\n\nA browser will be launched when you use `webpuppet_navigate`, `webpuppet_prompt`, or `webpuppet_session_open`.".to_string()
+        };
+
         Ok(ToolCallResult {
-            content: vec![ContentItem::text(format!(
-                "# Browser Status\n\n🟢 Browser session is active.\n\n- **Mode**: {}\n- **Providers**: Grok, Claude, Gemini",
-                visibility
-            ))],
+            content: vec![ContentItem::text(text)],
             is_error: false,
             meta: None,
         })
