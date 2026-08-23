@@ -997,13 +997,22 @@ impl Tool for ScreenshotTool {
                 Error::InvalidParams("Either 'session_id' or 'url' must be provided".into())
             })?;
 
+            if target_url.trim().is_empty()
+                || (!target_url.starts_with("http://") && !target_url.starts_with("https://"))
+            {
+                return Err(Error::InvalidParams(format!(
+                    "Invalid target URL '{}': URL must start with http:// or https://",
+                    target_url
+                )));
+            }
+
             // Check permissions for this URL before ephemeral navigation
             context
                 .permissions
                 .require_with_url(Operation::Navigate, &target_url)
                 .map_err(|e| Error::PermissionDenied(e.to_string()))?;
 
-            let (session, _puppet, _handler) = context
+            let (mut session, _puppet, _handler) = context
                 .get_active_or_fallback(None, Some(Provider::Grok))
                 .await?;
 
@@ -1095,8 +1104,8 @@ impl Tool for CheckPermissionTool {
             }
         };
 
-        let decision = if let Some(url) = args.url {
-            context.permissions.check_with_url(operation, &url)
+        let decision = if let Some(ref url) = args.url {
+            context.permissions.check_with_url(operation, url)
         } else {
             context.permissions.check(operation)
         };
@@ -1174,8 +1183,12 @@ impl Tool for InterventionStatusTool {
         let reason = handler_guard.current_reason();
 
         let state_str = match state {
+            InterventionState::None => "⚪ None",
             InterventionState::Running => "🟢 Running",
-            InterventionState::WaitingForHuman => "🟡 Waiting for human",
+            InterventionState::WaitingForUser(_) | InterventionState::WaitingForHuman => {
+                "🟡 Waiting for human"
+            }
+            InterventionState::Paused => "⏸️ Paused",
             InterventionState::Resuming => "🔵 Resuming",
             InterventionState::TimedOut => "🔴 Timed out",
             InterventionState::Cancelled => "⚫ Cancelled",
@@ -1259,7 +1272,7 @@ impl Tool for InterventionCompleteTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.complete(args.success, args.message.clone());
 
         let status = if args.success {
@@ -1327,7 +1340,7 @@ impl Tool for InterventionPauseTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.pause();
 
         Ok(ToolCallResult {
@@ -1386,7 +1399,7 @@ impl Tool for InterventionResumeTool {
             context.intervention_handler.clone()
         };
 
-        let handler_guard = handler.read().await;
+        let mut handler_guard = handler.write().await;
         handler_guard.resume();
 
         Ok(ToolCallResult {
@@ -1449,7 +1462,16 @@ impl Tool for NavigateTool {
         let args: NavigateArgs =
             serde_json::from_value(arguments).map_err(|e| Error::InvalidParams(e.to_string()))?;
 
-        let (session, _puppet, _handler) = context
+        if args.url.trim().is_empty()
+            || (!args.url.starts_with("http://") && !args.url.starts_with("https://"))
+        {
+            return Err(Error::InvalidParams(format!(
+                "Invalid navigation URL '{}': URL must start with http:// or https://",
+                args.url
+            )));
+        }
+
+        let (mut session, _puppet, _handler) = context
             .get_active_or_fallback(args.session_id.as_deref(), Some(Provider::Grok))
             .await?;
 
