@@ -310,6 +310,32 @@ async fn test_persistent_session_workflow() {
         assert!(response.error.is_none());
     }
 
+    // Check browser status with session_id
+    let status_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 18,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_browser_status",
+            "arguments": {
+                "session_id": session_id
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(status_request).await {
+        assert!(response.error.is_none());
+        if let Some(result) = response.result {
+            let text = result
+                .get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            assert!(text.contains("Session"));
+        }
+    }
+
     // Close persistent session
     let close_request = JsonRpcRequest {
         jsonrpc: "2.0".into(),
@@ -622,6 +648,189 @@ async fn test_intervention_status() {
             }
         }
         Err(e) => eprintln!("Intervention status failed: {}", e),
+    }
+
+    client.close().await;
+}
+
+// ============================================================================
+// Security & Validation Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_invalid_url_scheme_rejection() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Navigate with invalid URL scheme (ftp)
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 20,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "url": "ftp://files.example.com"
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(request).await {
+        assert!(
+            response.error.is_some(),
+            "Invalid scheme ftp:// should be rejected with an error"
+        );
+        if let Some(err) = response.error {
+            assert!(
+                err.message.contains("invalid URL scheme") || err.message.contains("http"),
+                "Error message should mention invalid URL scheme"
+            );
+        }
+    }
+
+    // Open persistent session for claude and verify navigation works
+    let open_claude = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 23,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_open",
+            "arguments": {
+                "provider": "claude"
+            }
+        })),
+    };
+
+    let mut claude_sid = String::new();
+    if let Ok(response) = client.send_request(open_claude).await {
+        if let Some(result) = response.result {
+            if let Some(meta_sid) = result
+                .get("_meta")
+                .and_then(|m| m.get("session_id"))
+                .and_then(|s| s.as_str())
+            {
+                claude_sid = meta_sid.to_string();
+            }
+        }
+    }
+    assert!(!claude_sid.is_empty());
+
+    let nav_claude = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 24,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_navigate",
+            "arguments": {
+                "session_id": claude_sid,
+                "url": "https://claude.ai"
+            }
+        })),
+    };
+    if let Ok(response) = client.send_request(nav_claude).await {
+        assert!(
+            response.error.is_none(),
+            "Navigating a Claude persistent session should succeed without provider mismatch"
+        );
+    }
+
+    client.close().await;
+}
+
+#[tokio::test]
+async fn test_session_provider_mismatch() {
+    let mut client = match McpTestClient::spawn().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Skipping test, MCP server not available: {}", e);
+            return;
+        }
+    };
+
+    // Initialize
+    let init_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 1,
+        method: "initialize".into(),
+        params: Some(json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        })),
+    };
+    let _ = client.send_request(init_request).await;
+
+    // Open persistent session for grok
+    let open_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 21,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_session_open",
+            "arguments": {
+                "provider": "grok"
+            }
+        })),
+    };
+
+    let mut session_id = String::new();
+    if let Ok(response) = client.send_request(open_request).await {
+        if let Some(result) = response.result {
+            if let Some(meta_sid) = result
+                .get("_meta")
+                .and_then(|m| m.get("session_id"))
+                .and_then(|s| s.as_str())
+            {
+                session_id = meta_sid.to_string();
+            }
+        }
+    }
+    assert!(!session_id.is_empty());
+
+    // Prompt requesting provider 'claude' on 'grok' session_id
+    let prompt_request = JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        id: 22,
+        method: "tools/call".into(),
+        params: Some(json!({
+            "name": "webpuppet_prompt",
+            "arguments": {
+                "session_id": session_id,
+                "provider": "claude",
+                "message": "Hello!"
+            }
+        })),
+    };
+
+    if let Ok(response) = client.send_request(prompt_request).await {
+        assert!(
+            response.error.is_some(),
+            "Provider mismatch should be rejected"
+        );
+        if let Some(err) = response.error {
+            assert!(
+                err.message.contains("mismatch"),
+                "Error message should mention provider mismatch"
+            );
+        }
     }
 
     client.close().await;
