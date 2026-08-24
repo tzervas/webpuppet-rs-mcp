@@ -69,6 +69,14 @@ impl McpServer {
 
     /// Run the server on stdio.
     pub async fn run_stdio(&self) -> Result<()> {
+        let result = self.run_stdio_loop().await;
+        tracing::info!("MCP server shutting down");
+        self.tools.shutdown().await;
+        result
+    }
+
+    /// Internal stdio processing loop.
+    async fn run_stdio_loop(&self) -> Result<()> {
         let stdin = std::io::stdin();
         let mut stdout = std::io::stdout();
         let reader = BufReader::new(stdin.lock());
@@ -99,8 +107,6 @@ impl McpServer {
             }
         }
 
-        tracing::info!("MCP server shutting down");
-        self.tools.shutdown().await;
         Ok(())
     }
 

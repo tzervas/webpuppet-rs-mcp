@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added optional `session_id` argument to `webpuppet_browser_status` to return active session details or a comprehensive session summary.
+- Added URL scheme validation (`http://` or `https://`) for `webpuppet_navigate` and `webpuppet_screenshot`.
+- Added domain permission enforcement (`require_with_url`) for `webpuppet_navigate`.
+- Added active session provider mismatch validation in `webpuppet_prompt`.
+
+### Security & Reliability
+- Guaranteed server shutdown cleanup (`self.tools.shutdown()`) across all stdio exit paths in `McpServer`.
+- Serialized lazy initialization of fallback browser instance using a dedicated async `Mutex` in `ToolContext`.
+- Unified human-in-the-loop (HITL) pause waiting loop for persistent and ephemeral sessions without holding lock across async boundaries.
+
 ## [0.1.0-alpha.3] - 2026-01-09
 
 ### Changed
